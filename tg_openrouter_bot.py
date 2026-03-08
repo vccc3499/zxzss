@@ -27,9 +27,10 @@ SITE_URL = "http://localhost"
 SITE_NAME = "Telegram Multi-Provider AI Bot"
 
 PAGE_SIZE = 8
-MAX_HISTORY_MESSAGES = 16
+MAX_HISTORY_MESSAGES = 200
 MODEL_CHECK_CONCURRENCY = 6
 SYSTEM_PROMPT = "You are a helpful assistant. Keep answers concise and clear."
+TELEGRAM_MESSAGE_CHUNK = 3900
 
 BTN_PROVIDER = "Провайдер"
 BTN_PICK_MODEL = "Выбрать модель"
@@ -86,6 +87,32 @@ def estimate_tokens(prompt_text: str, answer_text: str) -> int:
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def split_for_telegram(text: str, chunk_size: int = TELEGRAM_MESSAGE_CHUNK) -> list[str]:
+    if len(text) <= chunk_size:
+        return [text]
+    parts: list[str] = []
+    remaining = text
+    while remaining:
+        if len(remaining) <= chunk_size:
+            parts.append(remaining)
+            break
+        cut = remaining.rfind("\n", 0, chunk_size)
+        if cut < int(chunk_size * 0.5):
+            cut = chunk_size
+        parts.append(remaining[:cut].rstrip())
+        remaining = remaining[cut:].lstrip()
+    return parts
+
+
+async def reply_long(message, text: str, reply_markup=None) -> None:
+    chunks = split_for_telegram(text)
+    for i, part in enumerate(chunks):
+        if i == len(chunks) - 1 and reply_markup is not None:
+            await message.reply_text(part, reply_markup=reply_markup)
+        else:
+            await message.reply_text(part)
 
 
 def _http_json(
@@ -658,7 +685,13 @@ def format_profile(state: dict[str, Any]) -> str:
 
 async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = ensure_state(context, context.bot_data["default_provider"])
-    await update.message.reply_text(format_profile(state), parse_mode=ParseMode.HTML, reply_markup=menu_keyboard())
+    text = format_profile(state)
+    chunks = split_for_telegram(text)
+    for i, part in enumerate(chunks):
+        if i == len(chunks) - 1:
+            await update.message.reply_text(part, parse_mode=ParseMode.HTML, reply_markup=menu_keyboard())
+        else:
+            await update.message.reply_text(part, parse_mode=ParseMode.HTML)
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1002,7 +1035,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         history = [history[0]] + history[-(MAX_HISTORY_MESSAGES - 1) :]
         state["history"] = history
 
-    await update.message.reply_text(result.answer, reply_markup=menu_keyboard())
+    await reply_long(update.message, result.answer, reply_markup=menu_keyboard())
 
 
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
