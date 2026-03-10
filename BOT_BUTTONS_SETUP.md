@@ -15,6 +15,7 @@
 ## Buttons
 - `Обновить все` - refresh all providers and rebuild agents.
 - `Агенты` - open agent picker and switch agent.
+- `Роли` - pick specialization (teacher, coder, marketing, avitolog, biologist, etc.).
 - `Провайдер` - switch provider for manual model mode.
 - `Выбрать модель` - manual model picker for current provider.
 - `Очистить диалог` - clear current chat history.

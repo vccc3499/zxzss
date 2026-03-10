@@ -29,6 +29,7 @@ SITE_NAME = "Telegram Multi-Provider AI Bot"
 
 PAGE_SIZE = 8
 AGENTS_PAGE_SIZE = 8
+ROLES_PAGE_SIZE = 8
 MAX_HISTORY_MESSAGES = 200
 MODEL_CHECK_CONCURRENCY = 6
 MAX_GLOBAL_AGENTS = 50
@@ -40,6 +41,7 @@ BTN_PICK_MODEL = "Выбрать модель"
 BTN_REFRESH = "Обновить модели"
 BTN_REFRESH_ALL = "Обновить все"
 BTN_AGENTS = "Агенты"
+BTN_ROLES = "Роли"
 BTN_CLEAR = "Очистить диалог"
 BTN_HELP = "Помощь"
 BTN_PROFILE = "Профиль"
@@ -63,6 +65,8 @@ GROQ_MONTHLY_TOKEN_LIMITS: dict[str, int] = {
     "llama-3.3-70b-versatile": 2_000_000,
     "llama3-70b-8192": 2_000_000,
 }
+
+
 
 
 def model_group(provider_id: str, model_id: str) -> str:
@@ -200,8 +204,26 @@ def strip_system_messages(messages: list[dict[str, str]]) -> list[dict[str, str]
     return [m for m in messages if m.get("role") != "system"]
 
 
-def initial_history() -> list[dict[str, str]]:
-    return [{"role": "system", "content": SYSTEM_PROMPT}]
+def role_prompt(role_id: str | None) -> str:
+    if not role_id:
+        return SYSTEM_PROMPT
+    spec = ROLE_MAP.get(role_id)
+    if not spec:
+        return SYSTEM_PROMPT
+    return spec.system_prompt
+
+
+def role_title(role_id: str | None) -> str:
+    if not role_id:
+        return "Универсал"
+    spec = ROLE_MAP.get(role_id)
+    if not spec:
+        return "Универсал"
+    return spec.title
+
+
+def initial_history(role_id: str | None = None) -> list[dict[str, str]]:
+    return [{"role": "system", "content": role_prompt(role_id)}]
 
 
 @dataclass
@@ -217,6 +239,55 @@ class AgentSpec:
     agent_id: str
     provider_id: str
     model_id: str
+
+
+@dataclass
+class RoleSpec:
+    role_id: str
+    title: str
+    system_prompt: str
+
+
+ROLE_SPECS: list[RoleSpec] = [
+    RoleSpec("general", "Универсал", "You are a practical, concise general assistant. Answer in Russian unless asked otherwise."),
+    RoleSpec("teacher", "Учитель", "You are a patient teacher. Explain step-by-step, with simple examples and short checks for understanding."),
+    RoleSpec("coder", "Кодер", "You are a senior software engineer. Provide robust code, edge cases, and practical implementation details."),
+    RoleSpec("debugger", "Отладчик", "You are a debugging specialist. Isolate root cause, propose reproducible checks, and minimal safe fixes."),
+    RoleSpec("architect", "Архитектор", "You are a software architect. Design scalable, maintainable systems with clear tradeoffs."),
+    RoleSpec("product", "Продакт", "You are a product manager. Define goals, user value, metrics, and prioritized roadmap."),
+    RoleSpec("marketing", "Маркетолог", "You are a marketing strategist. Build offers, positioning, channels, and measurable campaigns."),
+    RoleSpec("copywriter", "Копирайтер", "You are a conversion copywriter. Write clear, persuasive texts with strong structure and CTA."),
+    RoleSpec("sales", "Продажник", "You are a sales advisor. Qualify needs, handle objections, and propose next best sales actions."),
+    RoleSpec("avitolog", "Авитолог", "You are an Avito optimization expert. Improve listing titles, photos, descriptions, and response scripts."),
+    RoleSpec("recruiter", "Рекрутер", "You are a recruiter and career advisor. Optimize resumes, vacancies, and interview strategy."),
+    RoleSpec("law_basic", "Юрист-черновик", "You are a legal drafting assistant (not a lawyer). Create safe draft texts and highlight legal risks."),
+    RoleSpec("finance_basic", "Финансы", "You are a personal finance analyst. Build budgets, scenarios, and risk-aware plans."),
+    RoleSpec("analyst", "Аналитик", "You are a data analyst. Structure problems, compute assumptions, and present concise conclusions."),
+    RoleSpec("scientist", "Исследователь", "You are a research assistant. Evaluate hypotheses, methods, and evidence quality."),
+    RoleSpec("biologist", "Биолог", "You are a biology tutor. Explain concepts accurately in accessible terms."),
+    RoleSpec("chemist", "Химик", "You are a chemistry tutor. Explain mechanisms and equations clearly and safely."),
+    RoleSpec("physicist", "Физик", "You are a physics tutor. Use first principles, formulas, and intuitive interpretations."),
+    RoleSpec("doctor_info", "Мед-справка", "You are a medical information assistant, not a doctor. Provide cautious educational info and advise professional care."),
+    RoleSpec("psychology", "Психолог (база)", "You are a supportive psychology educator. Offer non-clinical guidance and coping techniques."),
+    RoleSpec("translator", "Переводчик", "You are a professional translator. Preserve meaning, tone, and context."),
+    RoleSpec("editor", "Редактор", "You are a strict editor. Improve clarity, structure, and correctness without changing intent."),
+    RoleSpec("summarizer", "Краткий обзор", "You are a summarization assistant. Extract key facts, decisions, and action items."),
+    RoleSpec("prompt_engineer", "Промпт-инженер", "You are a prompt engineer. Create precise prompts, constraints, and evaluation criteria."),
+    RoleSpec("smm", "SMM-менеджер", "You are an SMM specialist. Build content plans, hooks, and posting strategy."),
+    RoleSpec("seo", "SEO-специалист", "You are an SEO specialist. Propose semantic core, structure, and on-page optimization."),
+    RoleSpec("designer", "Дизайнер", "You are a UI/UX advisor. Propose practical layout, hierarchy, and interaction improvements."),
+    RoleSpec("qa", "QA-инженер", "You are a QA engineer. Create test cases, risks, and regression checklist."),
+    RoleSpec("devops", "DevOps", "You are a DevOps engineer. Improve CI/CD, reliability, and observability with pragmatic steps."),
+    RoleSpec("security", "ИБ-специалист", "You are a defensive security advisor. Focus on hardening, detection, and secure configuration."),
+    RoleSpec("historian", "Историк", "You are a history explainer. Provide context, chronology, and critical nuance."),
+    RoleSpec("travel", "Тревел-консультант", "You are a travel planner. Build practical itineraries, budgets, and logistics."),
+    RoleSpec("chef", "Шеф-повар", "You are a culinary advisor. Give precise recipes and substitutions by available ingredients."),
+    RoleSpec("fitness", "Фитнес-тренер", "You are a fitness coach. Build safe, progressive training plans."),
+    RoleSpec("storyteller", "Сценарист", "You are a creative storyteller. Write vivid scenes, characters, and plot structure."),
+    RoleSpec("crime_fiction", "Преступник (fiction)", "You are a crime-fiction character consultant for stories and analysis only. Never provide real-world wrongdoing instructions."),
+]
+
+ROLE_MAP: dict[str, RoleSpec] = {r.role_id: r for r in ROLE_SPECS}
 
 
 class BaseClient:
@@ -516,8 +587,8 @@ def menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [BTN_PROVIDER, BTN_REFRESH, BTN_REFRESH_ALL],
-            [BTN_PICK_MODEL, BTN_AGENTS, BTN_CLEAR],
-            [BTN_PROFILE, BTN_HELP],
+            [BTN_PICK_MODEL, BTN_AGENTS, BTN_ROLES],
+            [BTN_CLEAR, BTN_PROFILE, BTN_HELP],
         ],
         resize_keyboard=True,
     )
@@ -586,7 +657,8 @@ def ensure_state(context: ContextTypes.DEFAULT_TYPE, default_provider: str) -> d
                 PROVIDER_HF: None,
                 PROVIDER_MISTRAL: None,
             },
-            "history": initial_history(),
+            "selected_role_id": "general",
+            "history": initial_history("general"),
             "model_group_filter": GROUP_ALL,
             "usage_stats": {},
             "usage_started_at": now_iso(),
@@ -682,6 +754,28 @@ def agents_keyboard(agents: list[AgentSpec], page: int = 0) -> InlineKeyboardMar
     return InlineKeyboardMarkup(rows)
 
 
+def roles_keyboard(selected_role_id: str | None, page: int = 0) -> InlineKeyboardMarkup:
+    total_pages = max(1, (len(ROLE_SPECS) + ROLES_PAGE_SIZE - 1) // ROLES_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * ROLES_PAGE_SIZE
+    chunk = ROLE_SPECS[start : start + ROLES_PAGE_SIZE]
+
+    rows: list[list[InlineKeyboardButton]] = []
+    for role in chunk:
+        marker = "• " if role.role_id == selected_role_id else ""
+        rows.append([InlineKeyboardButton(f"{marker}{role.title}", callback_data=f"rr:{role.role_id}")])
+
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("Назад", callback_data=f"rp:{page-1}"))
+    nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("Вперед", callback_data=f"rp:{page+1}"))
+    rows.append(nav)
+    rows.append([InlineKeyboardButton("Закрыть", callback_data="close")])
+    return InlineKeyboardMarkup(rows)
+
+
 async def show_provider_picker(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     available: set[str] = context.bot_data["available_providers"]
     await update.message.reply_text(
@@ -725,6 +819,16 @@ async def show_agents_picker(target_message, context: ContextTypes.DEFAULT_TYPE,
         "<b>Выбор агента</b>\nОдин агент = одна модель одного провайдера.",
         parse_mode=ParseMode.HTML,
         reply_markup=agents_keyboard(agents, page),
+    )
+
+
+async def show_roles_picker(target_message, context: ContextTypes.DEFAULT_TYPE, page: int = 0) -> None:
+    state = ensure_state(context, context.bot_data["default_provider"])
+    selected_role_id = state.get("selected_role_id", "general")
+    await target_message.reply_text(
+        "<b>Выбор роли</b>\nРоль задает стиль и специализацию ответа.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=roles_keyboard(selected_role_id, page),
     )
 
 
@@ -801,15 +905,17 @@ async def profile_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = ensure_state(context, context.bot_data["default_provider"])
     current = provider_title(state["current_provider"])
+    current_role = role_title(state.get("selected_role_id"))
     available = context.bot_data["available_providers"]
     providers_text = ", ".join(provider_title(p) for p in sorted(available))
     await update.message.reply_text(
         "<b>AI Bot</b>\n"
         f"Провайдеры: {providers_text}\n"
         f"Текущий: {current}\n"
+        f"Роль: {current_role}\n"
         f"1) Бот сейчас автоматически обновит модели кнопочным режимом\n"
         f"2) Нажми «{BTN_AGENTS}»\n"
-        "3) Выбери агента кнопкой\n"
+        f"3) При желании выбери «{BTN_ROLES}»\n"
         "4) Пиши сообщения",
         parse_mode=ParseMode.HTML,
         reply_markup=menu_keyboard(),
@@ -823,6 +929,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "Используй только кнопки.\n"
         f"«{BTN_REFRESH_ALL}» - обновить модели без расхода токенов\n"
         f"«{BTN_AGENTS}» - выбрать агента\n"
+        f"«{BTN_ROLES}» - выбрать специализацию (учитель, кодер и т.д.)\n"
         f"«{BTN_PICK_MODEL}» - ручной выбор модели\n"
         f"«{BTN_PROVIDER}» - выбрать провайдера для ручного режима\n"
         f"«{BTN_CLEAR}» - очистить диалог\n"
@@ -964,7 +1071,7 @@ async def agent_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     state["selected_agent_id"] = found.agent_id
     state["agent_mode"] = "manual"
-    state["history"] = initial_history()
+    state["history"] = initial_history(state.get("selected_role_id"))
     await update.message.reply_text(
         f"Агент выбран: {found.agent_id}\n{provider_title(found.provider_id)} | {found.model_id}",
         reply_markup=menu_keyboard(),
@@ -979,7 +1086,7 @@ async def clear_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = ensure_state(context, context.bot_data["default_provider"])
     provider_id: str = state["current_provider"]
     selected = state["selected_models"].get(provider_id)
-    state["history"] = initial_history()
+    state["history"] = initial_history(state.get("selected_role_id"))
     await update.message.reply_text(
         f"Диалог очищен. Текущая модель: {selected or 'не выбрана'}",
         reply_markup=menu_keyboard(),
@@ -1007,7 +1114,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         state["current_provider"] = new_provider
         state["selected_agent_id"] = None
         state["model_group_filter"] = GROUP_ALL
-        state["history"] = initial_history()
+        state["history"] = initial_history(state.get("selected_role_id"))
         await query.edit_message_text(f"Провайдер переключен на: {provider_title(new_provider)}")
         await query.message.reply_text(
             "Теперь нажми «Обновить модели», затем «Выбрать модель».",
@@ -1030,7 +1137,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         agent_id = data.split(":", 1)[1]
         if agent_id == "off":
             state["selected_agent_id"] = None
-            state["history"] = initial_history()
+            state["history"] = initial_history(state.get("selected_role_id"))
             await query.edit_message_text("Режим агента выключен.")
             await query.message.reply_text("Выбери модель вручную или нового агента.", reply_markup=menu_keyboard())
             return
@@ -1039,13 +1146,31 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.answer("Агент не найден", show_alert=True)
             return
         state["selected_agent_id"] = found.agent_id
-        state["history"] = initial_history()
+        state["history"] = initial_history(state.get("selected_role_id"))
         state["current_provider"] = found.provider_id
         state["selected_models"][found.provider_id] = found.model_id
         await query.edit_message_text(
             f"Выбран агент: {found.agent_id}\n{provider_title(found.provider_id)} | {found.model_id}"
         )
         await query.message.reply_text("Теперь просто пиши сообщение.", reply_markup=menu_keyboard())
+        return
+
+    if data.startswith("rp:"):
+        page = int(data.split(":", 1)[1])
+        await query.edit_message_reply_markup(
+            reply_markup=roles_keyboard(state.get("selected_role_id", "general"), page)
+        )
+        return
+
+    if data.startswith("rr:"):
+        role_id = data.split(":", 1)[1]
+        if role_id not in ROLE_MAP:
+            await query.answer("Роль не найдена", show_alert=True)
+            return
+        state["selected_role_id"] = role_id
+        state["history"] = initial_history(role_id)
+        await query.edit_message_text(f"Роль выбрана: {role_title(role_id)}")
+        await query.message.reply_text("Роль применена. Пиши сообщение.", reply_markup=menu_keyboard())
         return
 
     if data.startswith("grp:"):
@@ -1063,7 +1188,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         selected = models[idx]
         state["selected_agent_id"] = None
         state["selected_models"][provider_id] = selected
-        state["history"] = initial_history()
+        state["history"] = initial_history(state.get("selected_role_id"))
         await query.edit_message_text(
             f"<b>Модель выбрана ({provider_title(provider_id)}):</b>\n<code>{selected}</code>",
             parse_mode=ParseMode.HTML,
@@ -1160,6 +1285,9 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
     if low == BTN_AGENTS.lower():
         await show_agents_picker(update.message, context, page=0)
+        return
+    if low == BTN_ROLES.lower():
+        await show_roles_picker(update.message, context, page=0)
         return
     if low == BTN_PICK_MODEL.lower():
         await show_models(update.message, context, page=0)
