@@ -1,3 +1,14 @@
 __pycache__/
 *.pyc
 .env
+node_modules/
+*.log
+*.out.log
+*.err.log
+*.jsonl
+*cookies*.json
+*_state.json
+avito_profile/
+tools/python/
+tools/python-embed.zip
+mindcraft/

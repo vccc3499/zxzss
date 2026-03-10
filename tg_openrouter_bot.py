@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import html
 import json
 import os
 import urllib.parse
@@ -27,14 +28,18 @@ SITE_URL = "http://localhost"
 SITE_NAME = "Telegram Multi-Provider AI Bot"
 
 PAGE_SIZE = 8
+AGENTS_PAGE_SIZE = 8
 MAX_HISTORY_MESSAGES = 200
 MODEL_CHECK_CONCURRENCY = 6
+MAX_GLOBAL_AGENTS = 50
 SYSTEM_PROMPT = "You are a helpful assistant. Keep answers concise and clear."
 TELEGRAM_MESSAGE_CHUNK = 3900
 
 BTN_PROVIDER = "Провайдер"
 BTN_PICK_MODEL = "Выбрать модель"
 BTN_REFRESH = "Обновить модели"
+BTN_REFRESH_ALL = "Обновить все"
+BTN_AGENTS = "Агенты"
 BTN_CLEAR = "Очистить диалог"
 BTN_HELP = "Помощь"
 BTN_PROFILE = "Профиль"
@@ -205,6 +210,13 @@ class ProviderResult:
     answer: str | None
     warning: str | None
     usage: dict[str, int] | None = None
+
+
+@dataclass
+class AgentSpec:
+    agent_id: str
+    provider_id: str
+    model_id: str
 
 
 class BaseClient:
@@ -503,8 +515,8 @@ class MistralClient(BaseClient):
 def menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [BTN_PROVIDER, BTN_REFRESH],
-            [BTN_PICK_MODEL, BTN_CLEAR],
+            [BTN_PROVIDER, BTN_REFRESH, BTN_REFRESH_ALL],
+            [BTN_PICK_MODEL, BTN_AGENTS, BTN_CLEAR],
             [BTN_PROFILE, BTN_HELP],
         ],
         resize_keyboard=True,
@@ -578,6 +590,8 @@ def ensure_state(context: ContextTypes.DEFAULT_TYPE, default_provider: str) -> d
             "model_group_filter": GROUP_ALL,
             "usage_stats": {},
             "usage_started_at": now_iso(),
+            "selected_agent_id": None,
+            "agent_mode": "manual",
         },
     )
 
@@ -594,6 +608,78 @@ def provider_title(provider_id: str) -> str:
     if provider_id == PROVIDER_MISTRAL:
         return "Mistral"
     return "HuggingFace"
+
+
+def build_global_agents(context: ContextTypes.DEFAULT_TYPE) -> list[AgentSpec]:
+    providers: set[str] = context.bot_data["available_providers"]
+    all_agents: list[AgentSpec] = []
+    idx = 1
+    for provider_id in sorted(providers):
+        models: list[str] = context.bot_data.get(current_models_key(provider_id), [])
+        for model_id in models:
+            if len(all_agents) >= MAX_GLOBAL_AGENTS:
+                return all_agents
+            all_agents.append(
+                AgentSpec(
+                    agent_id=f"a{idx}",
+                    provider_id=provider_id,
+                    model_id=model_id,
+                )
+            )
+            idx += 1
+    return all_agents
+
+
+def find_agent_by_id(context: ContextTypes.DEFAULT_TYPE, agent_id: str) -> AgentSpec | None:
+    agents: list[AgentSpec] = context.bot_data.get("global_agents", [])
+    for agent in agents:
+        if agent.agent_id == agent_id:
+            return agent
+    return None
+
+
+def format_agents_list(agents: list[AgentSpec], limit: int = 50) -> str:
+    if not agents:
+        return "Список агентов пуст. Нажми «Обновить все»."
+    lines = ["<b>Агенты</b>", "Формат: /agent ID", ""]
+    for agent in agents[:limit]:
+        model_safe = html.escape(agent.model_id)
+        lines.append(
+            f"<code>{agent.agent_id}</code> | {provider_title(agent.provider_id)} | <code>{model_safe}</code>"
+        )
+    if len(agents) > limit:
+        lines.append("")
+        lines.append(f"Показано {limit} из {len(agents)}.")
+    return "\n".join(lines)
+
+
+def compact_model_label(model_id: str, max_len: int = 36) -> str:
+    if len(model_id) <= max_len:
+        return model_id
+    return model_id[: max_len - 1] + "…"
+
+
+def agents_keyboard(agents: list[AgentSpec], page: int = 0) -> InlineKeyboardMarkup:
+    total_pages = max(1, (len(agents) + AGENTS_PAGE_SIZE - 1) // AGENTS_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    start = page * AGENTS_PAGE_SIZE
+    chunk = agents[start : start + AGENTS_PAGE_SIZE]
+
+    rows: list[list[InlineKeyboardButton]] = []
+    for agent in chunk:
+        label = f"{agent.agent_id} | {provider_title(agent.provider_id)} | {compact_model_label(agent.model_id)}"
+        rows.append([InlineKeyboardButton(label, callback_data=f"ag:{agent.agent_id}")])
+
+    nav: list[InlineKeyboardButton] = []
+    if page > 0:
+        nav.append(InlineKeyboardButton("Назад", callback_data=f"agp:{page-1}"))
+    nav.append(InlineKeyboardButton(f"{page+1}/{total_pages}", callback_data="noop"))
+    if page < total_pages - 1:
+        nav.append(InlineKeyboardButton("Вперед", callback_data=f"agp:{page+1}"))
+    rows.append(nav)
+    rows.append([InlineKeyboardButton("Выключить агента", callback_data="ag:off")])
+    rows.append([InlineKeyboardButton("Закрыть", callback_data="close")])
+    return InlineKeyboardMarkup(rows)
 
 
 async def show_provider_picker(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -621,6 +707,24 @@ async def show_models(target_message, context: ContextTypes.DEFAULT_TYPE, page: 
         "FAST = быстро тратят лимит, ECO = экономные.",
         parse_mode=ParseMode.HTML,
         reply_markup=models_keyboard(provider_id, models, page, group_filter),
+    )
+
+
+async def show_agents_picker(target_message, context: ContextTypes.DEFAULT_TYPE, page: int = 0) -> None:
+    agents: list[AgentSpec] = context.bot_data.get("global_agents", [])
+    if not agents:
+        agents = build_global_agents(context)
+        context.bot_data["global_agents"] = agents
+    if not agents:
+        await target_message.reply_text(
+            "Агенты пока не собраны. Нажми «Обновить все».",
+            reply_markup=menu_keyboard(),
+        )
+        return
+    await target_message.reply_text(
+        "<b>Выбор агента</b>\nОдин агент = одна модель одного провайдера.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=agents_keyboard(agents, page),
     )
 
 
@@ -703,22 +807,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "<b>AI Bot</b>\n"
         f"Провайдеры: {providers_text}\n"
         f"Текущий: {current}\n"
-        f"1) Нажми «{BTN_REFRESH}»\n"
-        f"2) Нажми «{BTN_PICK_MODEL}»\n"
-        "3) После выбора просто пиши сообщения",
+        f"1) Бот сейчас автоматически обновит модели кнопочным режимом\n"
+        f"2) Нажми «{BTN_AGENTS}»\n"
+        "3) Выбери агента кнопкой\n"
+        "4) Пиши сообщения",
         parse_mode=ParseMode.HTML,
         reply_markup=menu_keyboard(),
     )
+    await refresh_all_cmd(update, context, notify_only=True)
 
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "<b>Команды</b>\n"
-        "/start - старт\n"
-        "/models - выбор модели\n"
-        "/profile - статистика и остаток\n"
-        "/clear - очистить диалог\n"
-        "Кнопка «Провайдер» переключает между OpenRouter, Groq, HuggingFace и Mistral.",
+        "<b>Управление</b>\n"
+        "Используй только кнопки.\n"
+        f"«{BTN_REFRESH_ALL}» - обновить модели без расхода токенов\n"
+        f"«{BTN_AGENTS}» - выбрать агента\n"
+        f"«{BTN_PICK_MODEL}» - ручной выбор модели\n"
+        f"«{BTN_PROVIDER}» - выбрать провайдера для ручного режима\n"
+        f"«{BTN_CLEAR}» - очистить диалог\n"
+        f"«{BTN_PROFILE}» - посмотреть статистику запросов",
         parse_mode=ParseMode.HTML,
         reply_markup=menu_keyboard(),
     )
@@ -727,25 +835,40 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def refresh_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = ensure_state(context, context.bot_data["default_provider"])
     provider_id: str = state["current_provider"]
-    client: BaseClient = context.bot_data["providers"][provider_id]
-    state["refresh_provider"] = provider_id
+    status_msg = await update.message.reply_text(f"Обновляю модели {provider_title(provider_id)}...")
+    good, total, details = await refresh_provider_models(context, provider_id, verify=False)
+    await status_msg.edit_text(details)
+    await update.message.reply_text(
+        f"Меню готово. Активных моделей: {good}/{total}",
+        reply_markup=menu_keyboard(),
+    )
 
+
+async def refresh_provider_models(
+    context: ContextTypes.DEFAULT_TYPE,
+    provider_id: str,
+    verify: bool = False,
+) -> tuple[int, int, str]:
+    client: BaseClient = context.bot_data["providers"][provider_id]
     try:
         models = await client.get_candidate_models()
     except urllib.error.HTTPError as e:
         code, detail = parse_http_error(e)
-        await update.message.reply_text(f"Ошибка {client.title} (HTTP {code}):\n{detail[:900]}")
-        return
+        return 0, 0, f"Ошибка {client.title} (HTTP {code}):\n{detail[:900]}"
     except Exception as e:
-        await update.message.reply_text(f"Не удалось обновить модели {client.title}: {e}")
-        return
+        return 0, 0, f"Не удалось обновить модели {client.title}: {e}"
 
     if not models:
         context.bot_data[current_models_key(provider_id)] = []
-        await update.message.reply_text(f"Не найдено моделей для {client.title}.", reply_markup=menu_keyboard())
-        return
+        return 0, 0, f"Не найдено моделей для {client.title}."
 
-    status_msg = await update.message.reply_text(f"Проверяю доступность моделей {client.title}...")
+    if not verify:
+        context.bot_data[current_models_key(provider_id)] = models
+        context.bot_data[f"unavailable:{provider_id}"] = []
+        return len(models), len(models), (
+            f"Готово ({client.title}). Загружено {len(models)} моделей без health-check (без расхода токенов)."
+        )
+
     sem = asyncio.Semaphore(MODEL_CHECK_CONCURRENCY)
 
     async def run_check(model_id: str) -> tuple[str, bool, str]:
@@ -756,70 +879,96 @@ async def refresh_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     results = await asyncio.gather(*(run_check(m) for m in models))
     good = [m for m, ok, _ in results if ok]
     bad = [(m, r) for m, ok, r in results if not ok]
-
-    # Ignore stale refresh result if user switched provider while checks were running.
-    if state.get("current_provider") != provider_id:
-        await status_msg.edit_text(f"Проверка {client.title} завершена (уже переключено на другой провайдер).")
-        return
-
     context.bot_data[current_models_key(provider_id)] = good
     context.bot_data[f"unavailable:{provider_id}"] = bad
 
-    if not good:
-        reason_stats: dict[str, int] = {}
-        for _, reason in bad:
-            reason_stats[reason] = reason_stats.get(reason, 0) + 1
-        top_reason = ""
-        if reason_stats:
-            top_reason = max(reason_stats.items(), key=lambda x: x[1])[0]
+    if good:
+        return len(good), len(models), f"Готово ({client.title}). Доступных: {len(good)} из {len(models)}. Скрыто: {len(bad)}."
 
-        if provider_id == PROVIDER_HF:
-            # HF can be flaky on health checks; keep a small fallback list so user can test manually.
-            fallback = models[:20]
-            context.bot_data[current_models_key(provider_id)] = fallback
-            await status_msg.edit_text(
-                f"Автопроверка {client.title} не нашла стабильных моделей. "
-                f"Показал {len(fallback)} кандидатов для ручного теста."
-            )
-            await update.message.reply_text("Меню готово.", reply_markup=menu_keyboard())
-            return
+    return 0, len(models), f"Сейчас нет доступных моделей {client.title}. Попробуй позже."
 
-        if provider_id == PROVIDER_GROQ:
-            hint = ""
-            if "HTTP 403" in top_reason:
-                fallback = models[:20]
-                context.bot_data[current_models_key(provider_id)] = fallback
-                hint = (
-                    "\nПричина: Groq отклоняет health-check (403)."
-                    "\nПоказал список кандидатов для ручного теста."
-                )
-                await status_msg.edit_text(
-                    f"Автопроверка {client.title} не подтвердила доступные модели.{hint}"
-                )
-                await update.message.reply_text("Меню готово.", reply_markup=menu_keyboard())
-                return
-            elif "HTTP 401" in top_reason:
-                hint = "\nПричина: ключ Groq недействителен (401)."
-            elif "rate-limited" in top_reason or "HTTP 429" in top_reason:
-                hint = "\nПричина: лимит/квота Groq (429)."
-            elif top_reason:
-                hint = f"\nОсновная причина: {top_reason}"
-            await status_msg.edit_text(
-                f"Сейчас нет доступных моделей {client.title}. Попробуй позже.{hint}"
-            )
-            await update.message.reply_text("Меню готово.", reply_markup=menu_keyboard())
-            return
 
-        await status_msg.edit_text(
-            f"Сейчас нет доступных моделей {client.title}. Попробуй позже."
+async def refresh_all_cmd(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    notify_only: bool = False,
+) -> None:
+    status_msg = await update.message.reply_text("Обновляю все провайдеры и собираю агентов...")
+    providers: set[str] = context.bot_data["available_providers"]
+    lines: list[str] = []
+    total_ok = 0
+    total_all = 0
+
+    for provider_id in sorted(providers):
+        ok_count, all_count, details = await refresh_provider_models(context, provider_id, verify=False)
+        total_ok += ok_count
+        total_all += all_count
+        lines.append(f"{provider_title(provider_id)}: {ok_count}/{all_count}")
+        lines.append(details[:220])
+        lines.append("")
+
+    agents = build_global_agents(context)
+    context.bot_data["global_agents"] = agents
+    if update.effective_user:
+        ustate = ensure_state(context, context.bot_data["default_provider"])
+        if agents and not ustate.get("selected_agent_id"):
+            ustate["selected_agent_id"] = agents[0].agent_id
+            ustate["current_provider"] = agents[0].provider_id
+            ustate["selected_models"][agents[0].provider_id] = agents[0].model_id
+    lines.append(f"Собрано агентов: {len(agents)} (лимит {MAX_GLOBAL_AGENTS}).")
+    lines.append(f"Открой «{BTN_AGENTS}» и выбери агента.")
+    await status_msg.edit_text("\n".join(lines))
+    if not notify_only:
+        await update.message.reply_text(
+            f"Итог по всем провайдерам: {total_ok}/{total_all}",
+            reply_markup=menu_keyboard(),
         )
-        await update.message.reply_text("Меню готово.", reply_markup=menu_keyboard())
+
+
+async def agents_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    agents: list[AgentSpec] = context.bot_data.get("global_agents", [])
+    if not agents:
+        agents = build_global_agents(context)
+        context.bot_data["global_agents"] = agents
+    text = format_agents_list(agents)
+    await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=menu_keyboard())
+
+
+async def agent_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    state = ensure_state(context, context.bot_data["default_provider"])
+    args = context.args or []
+    if not args:
+        current = state.get("selected_agent_id") or "off"
+        await update.message.reply_text(
+            f"Текущий агент: {current}\nИспользование: /agent a1 или /agent off",
+            reply_markup=menu_keyboard(),
+        )
         return
 
-    await status_msg.edit_text(
-        f"Готово ({client.title}). Доступных: {len(good)} из {len(models)}. Скрыто: {len(bad)}."
+    raw = args[0].strip().lower()
+    if raw in {"off", "none", "0"}:
+        state["selected_agent_id"] = None
+        state["agent_mode"] = "manual"
+        await update.message.reply_text("Режим агента выключен.", reply_markup=menu_keyboard())
+        return
+
+    agents: list[AgentSpec] = context.bot_data.get("global_agents", [])
+    if not agents:
+        agents = build_global_agents(context)
+        context.bot_data["global_agents"] = agents
+
+    found = find_agent_by_id(context, raw)
+    if not found:
+        await update.message.reply_text("Агент не найден. Открой /agents", reply_markup=menu_keyboard())
+        return
+
+    state["selected_agent_id"] = found.agent_id
+    state["agent_mode"] = "manual"
+    state["history"] = initial_history()
+    await update.message.reply_text(
+        f"Агент выбран: {found.agent_id}\n{provider_title(found.provider_id)} | {found.model_id}",
+        reply_markup=menu_keyboard(),
     )
-    await update.message.reply_text("Меню готово.", reply_markup=menu_keyboard())
 
 
 async def models_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -856,6 +1005,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.answer("Провайдер недоступен", show_alert=True)
             return
         state["current_provider"] = new_provider
+        state["selected_agent_id"] = None
         state["model_group_filter"] = GROUP_ALL
         state["history"] = initial_history()
         await query.edit_message_text(f"Провайдер переключен на: {provider_title(new_provider)}")
@@ -868,6 +1018,34 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if data.startswith("p:"):
         page = int(data.split(":", 1)[1])
         await query.edit_message_reply_markup(reply_markup=models_keyboard(provider_id, models, page, group_filter))
+        return
+
+    if data.startswith("agp:"):
+        page = int(data.split(":", 1)[1])
+        agents: list[AgentSpec] = context.bot_data.get("global_agents", [])
+        await query.edit_message_reply_markup(reply_markup=agents_keyboard(agents, page))
+        return
+
+    if data.startswith("ag:"):
+        agent_id = data.split(":", 1)[1]
+        if agent_id == "off":
+            state["selected_agent_id"] = None
+            state["history"] = initial_history()
+            await query.edit_message_text("Режим агента выключен.")
+            await query.message.reply_text("Выбери модель вручную или нового агента.", reply_markup=menu_keyboard())
+            return
+        found = find_agent_by_id(context, agent_id)
+        if not found:
+            await query.answer("Агент не найден", show_alert=True)
+            return
+        state["selected_agent_id"] = found.agent_id
+        state["history"] = initial_history()
+        state["current_provider"] = found.provider_id
+        state["selected_models"][found.provider_id] = found.model_id
+        await query.edit_message_text(
+            f"Выбран агент: {found.agent_id}\n{provider_title(found.provider_id)} | {found.model_id}"
+        )
+        await query.message.reply_text("Теперь просто пиши сообщение.", reply_markup=menu_keyboard())
         return
 
     if data.startswith("grp:"):
@@ -883,6 +1061,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             await query.answer("Модель не найдена", show_alert=True)
             return
         selected = models[idx]
+        state["selected_agent_id"] = None
         state["selected_models"][provider_id] = selected
         state["history"] = initial_history()
         await query.edit_message_text(
@@ -979,11 +1158,17 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if low == BTN_PROVIDER.lower():
         await show_provider_picker(update, context)
         return
+    if low == BTN_AGENTS.lower():
+        await show_agents_picker(update.message, context, page=0)
+        return
     if low == BTN_PICK_MODEL.lower():
         await show_models(update.message, context, page=0)
         return
     if low == BTN_REFRESH.lower():
         await refresh_models(update, context)
+        return
+    if low == BTN_REFRESH_ALL.lower():
+        await refresh_all_cmd(update, context, notify_only=False)
         return
     if low == BTN_CLEAR.lower():
         await clear_cmd(update, context)
@@ -996,14 +1181,6 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     state = ensure_state(context, context.bot_data["default_provider"])
-    provider_id: str = state["current_provider"]
-    selected_model = state["selected_models"].get(provider_id)
-    if not selected_model:
-        await update.message.reply_text(
-            f"Сначала выбери модель кнопкой «{BTN_PICK_MODEL}».",
-            reply_markup=menu_keyboard(),
-        )
-        return
 
     history: list[dict[str, str]] = state["history"]
     history.append({"role": "user", "content": text})
@@ -1012,16 +1189,36 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         state["history"] = history
 
     await update.message.chat.send_action("typing")
-    client: BaseClient = context.bot_data["providers"][provider_id]
-    models: list[str] = context.bot_data.get(current_models_key(provider_id), [])
-    result = await try_with_fallbacks(client, provider_id, selected_model, history, models)
+    selected_agent_id = state.get("selected_agent_id")
+    agent = find_agent_by_id(context, selected_agent_id) if selected_agent_id else None
+
+    if agent:
+        provider_id = agent.provider_id
+        selected_model = agent.model_id
+        client: BaseClient = context.bot_data["providers"][provider_id]
+        models: list[str] = context.bot_data.get(current_models_key(provider_id), [])
+        result = await try_with_fallbacks(client, provider_id, selected_model, history, models)
+        if result.model_used and result.model_used != selected_model:
+            state["selected_agent_id"] = None
+    else:
+        provider_id = state["current_provider"]
+        selected_model = state["selected_models"].get(provider_id)
+        if not selected_model:
+            await update.message.reply_text(
+                f"Сначала выбери модель кнопкой «{BTN_PICK_MODEL}» или агента через /agents.",
+                reply_markup=menu_keyboard(),
+            )
+            return
+        client = context.bot_data["providers"][provider_id]
+        models = context.bot_data.get(current_models_key(provider_id), [])
+        result = await try_with_fallbacks(client, provider_id, selected_model, history, models)
 
     if result.warning and result.answer is None:
         await update.message.reply_text(result.warning, reply_markup=menu_keyboard(), parse_mode=ParseMode.HTML)
         return
     if result.warning:
         await update.message.reply_text(result.warning, parse_mode=ParseMode.HTML)
-    if result.model_used and result.model_used != selected_model:
+    if not agent and result.model_used and result.model_used != selected_model:
         state["selected_models"][provider_id] = result.model_used
     if not result.answer:
         await update.message.reply_text("Не удалось получить ответ от модели.", reply_markup=menu_keyboard())
@@ -1111,16 +1308,13 @@ def main() -> None:
     app.bot_data["providers"] = providers
     app.bot_data["available_providers"] = set(providers.keys())
     app.bot_data["default_provider"] = default_provider
+    app.bot_data["global_agents"] = []
     app.bot_data[current_models_key(PROVIDER_OPENROUTER)] = []
     app.bot_data[current_models_key(PROVIDER_GROQ)] = []
     app.bot_data[current_models_key(PROVIDER_HF)] = []
     app.bot_data[current_models_key(PROVIDER_MISTRAL)] = []
 
     app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("help", help_cmd))
-    app.add_handler(CommandHandler("models", models_cmd))
-    app.add_handler(CommandHandler("profile", profile_cmd))
-    app.add_handler(CommandHandler("clear", clear_cmd))
     app.add_handler(CallbackQueryHandler(callback_router))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
     app.add_error_handler(on_error)
