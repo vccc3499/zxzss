@@ -27,6 +27,7 @@ SILICONFLOW_BASE = "https://api.siliconflow.com/v1"
 LEGNEXT_BASE = os.getenv("LEGNEXT_BASE_URL", "https://api.legnext.ai/api/v1")
 ONLYSQ_BASE = "https://api.onlysq.ru/ai"
 ONLYSQ_OPENAI_BASE = "https://api.onlysq.ru/ai/openai"
+PUTER_OPENAI_BASE = "https://api.puter.com/puterai/openai/v1"
 POLLINATIONS_TEXT_BASES = (
     "https://gen.pollinations.ai/v1",
     "https://text.pollinations.ai/openai/v1",
@@ -60,6 +61,7 @@ PROVIDER_SILICONFLOW = "siliconflow"
 PROVIDER_LEGNEXT = "legnext"
 PROVIDER_POLLINATIONS = "pollinations"
 PROVIDER_ONLYSQ = "onlysq"
+PROVIDER_PUTER = "puter"
 
 GROUP_ALL = "all"
 GROUP_FAST = "fast"
@@ -86,6 +88,13 @@ DEFAULT_POLLINATIONS_IMAGE_MODELS = ["flux", "gptimage-large", "seedream", "kont
 DEFAULT_POLLINATIONS_VIDEO_MODELS = ["seedance", "veo"]
 DEFAULT_LEGNEXT_IMAGE_MODELS = ["midjourney"]
 DEFAULT_LEGNEXT_VIDEO_MODELS = ["midjourney-video"]
+DEFAULT_PUTER_MODELS = [
+    "nvidia/llama-3.1-nemotron-70b-instruct",
+    "nvidia/llama-3.3-nemotron-70b-instruct",
+    "nvidia/llama-3.3-nemotron-49b-instruct",
+    "nvidia/llama-3.1-nemotron-51b-instruct",
+    "nvidia/llama-3.1-nemotron-4b-instruct",
+]
 
 
 def model_group(provider_id: str, model_id: str) -> str:
@@ -109,7 +118,9 @@ def model_group_label(provider_id: str, model_id: str) -> str:
     return f"[ECO] {model_id}"
 
 
-def model_key(provider_id: str, model_id: str) -> str:
+def model_key(provider_id: str, model_id: str, model_type: str) -> str:
+    if model_type == MODEL_TYPE_CHAT:
+        return model_id
     return f"{provider_id}:{model_id}"
 
 
@@ -294,6 +305,7 @@ class ModelEntry:
     provider_id: str
     model_id: str
     model_type: str
+    providers: list[str] | None = None
 
 
 @dataclass
@@ -806,6 +818,50 @@ class OnlySqClient(BaseClient):
         return text, usage
 
 
+class PuterClient(BaseClient):
+    provider_id = PROVIDER_PUTER
+    title = "Puter"
+
+    def __init__(self, auth_token: str):
+        self.auth_token = auth_token
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.auth_token}",
+            "Accept": "application/json",
+        }
+
+    async def get_candidate_models(self) -> list[str]:
+        data = await call_json_with_retry(f"{PUTER_OPENAI_BASE}/models", "GET", None, self.headers)
+        items = data.get("data") if isinstance(data, dict) else data
+        ids: list[str] = []
+        for item in items or []:
+            model_id = item.get("id", "") if isinstance(item, dict) else str(item)
+            if model_id:
+                ids.append(model_id)
+        if not ids:
+            ids = DEFAULT_PUTER_MODELS.copy()
+        return sorted(set(ids))
+
+    async def chat_with_usage(self, model: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, int] | None]:
+        payload = {"model": model, "messages": messages, "temperature": 0.6}
+        data = await call_json_with_retry(
+            f"{PUTER_OPENAI_BASE}/chat/completions",
+            "POST",
+            payload,
+            self.headers,
+        )
+        text = data["choices"][0]["message"]["content"].strip()
+        usage_raw = data.get("usage", {}) or {}
+        usage = {
+            "prompt_tokens": int(usage_raw.get("prompt_tokens", 0) or 0),
+            "completion_tokens": int(usage_raw.get("completion_tokens", 0) or 0),
+            "total_tokens": int(usage_raw.get("total_tokens", 0) or 0),
+        }
+        return text, usage
+
+
 def menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
@@ -818,7 +874,13 @@ def menu_keyboard() -> ReplyKeyboardMarkup:
 
 
 def model_entry_label(entry: ModelEntry) -> str:
-    prefix = provider_title(entry.provider_id)
+    if entry.model_type == MODEL_TYPE_CHAT and entry.providers:
+        providers = entry.providers
+        prefix = provider_title(providers[0])
+        if len(providers) > 1:
+            prefix = f"{prefix}+{len(providers)-1}"
+    else:
+        prefix = provider_title(entry.provider_id)
     if entry.model_type == MODEL_TYPE_CHAT:
         label = model_group_label(entry.provider_id, entry.model_id)
     elif entry.model_type == MODEL_TYPE_IMAGE:
@@ -930,6 +992,8 @@ def provider_title(provider_id: str) -> str:
         return "Mistral"
     if provider_id == PROVIDER_ONLYSQ:
         return "OnlySQ"
+    if provider_id == PROVIDER_PUTER:
+        return "Puter"
     if provider_id == PROVIDER_SILICONFLOW:
         return "SiliconFlow"
     if provider_id == PROVIDER_LEGNEXT:
@@ -1127,7 +1191,7 @@ def format_profile(state: dict[str, Any], catalog_by_key: dict[str, ModelEntry])
             req = int(stats.get("requests", 0))
             total = int(stats.get("total_tokens", 0))
             avg = max(1, total // max(1, req))
-            entry = catalog_by_key.get(model_key(provider_id, model_id))
+            entry = catalog_by_key.get(model_key(provider_id, model_id, MODEL_TYPE_CHAT))
             model_type = entry.model_type if entry else MODEL_TYPE_CHAT
             if model_type == MODEL_TYPE_CHAT:
                 grp = "FAST" if model_group(provider_id, model_id) == GROUP_FAST else "ECO"
@@ -1192,7 +1256,7 @@ def format_limits(state: dict[str, Any], context: ContextTypes.DEFAULT_TYPE) -> 
             total_tokens = int(stats.get("total_tokens", 0))
             token_limit = get_token_limit(context, provider_id, model_id)
             req_limit = get_request_limit(context, provider_id, model_id)
-            entry = catalog_by_key.get(model_key(provider_id, model_id))
+            entry = catalog_by_key.get(model_key(provider_id, model_id, MODEL_TYPE_CHAT))
             model_type = entry.model_type if entry else MODEL_TYPE_CHAT
 
             line = f"<code>{model_id}</code>"
@@ -1311,17 +1375,22 @@ async def refresh_provider_models(
 def build_model_catalog(context: ContextTypes.DEFAULT_TYPE) -> list[ModelEntry]:
     catalog: list[ModelEntry] = []
     chat_providers: set[str] = context.bot_data.get("chat_providers", set())
+    chat_map: dict[str, set[str]] = {}
     for provider_id in sorted(chat_providers):
         models: list[str] = context.bot_data.get(current_models_key(provider_id), [])
         for model_id in models:
-            catalog.append(
-                ModelEntry(
-                    key=model_key(provider_id, model_id),
-                    provider_id=provider_id,
-                    model_id=model_id,
-                    model_type=MODEL_TYPE_CHAT,
-                )
+            chat_map.setdefault(model_id, set()).add(provider_id)
+    for model_id, providers in sorted(chat_map.items(), key=lambda kv: kv[0].lower()):
+        prov_list = sorted(providers)
+        catalog.append(
+            ModelEntry(
+                key=model_key(prov_list[0], model_id, MODEL_TYPE_CHAT),
+                provider_id=prov_list[0],
+                model_id=model_id,
+                model_type=MODEL_TYPE_CHAT,
+                providers=prov_list,
             )
+        )
 
     legnext_image_models = context.bot_data.get("legnext_image_models", [])
     legnext_video_models = context.bot_data.get("legnext_video_models", [])
@@ -1331,7 +1400,7 @@ def build_model_catalog(context: ContextTypes.DEFAULT_TYPE) -> list[ModelEntry]:
     for model_id in legnext_image_models:
         catalog.append(
             ModelEntry(
-                key=model_key(PROVIDER_LEGNEXT, model_id),
+                key=model_key(PROVIDER_LEGNEXT, model_id, MODEL_TYPE_IMAGE),
                 provider_id=PROVIDER_LEGNEXT,
                 model_id=model_id,
                 model_type=MODEL_TYPE_IMAGE,
@@ -1340,7 +1409,7 @@ def build_model_catalog(context: ContextTypes.DEFAULT_TYPE) -> list[ModelEntry]:
     for model_id in legnext_video_models:
         catalog.append(
             ModelEntry(
-                key=model_key(PROVIDER_LEGNEXT, model_id),
+                key=model_key(PROVIDER_LEGNEXT, model_id, MODEL_TYPE_VIDEO),
                 provider_id=PROVIDER_LEGNEXT,
                 model_id=model_id,
                 model_type=MODEL_TYPE_VIDEO,
@@ -1349,7 +1418,7 @@ def build_model_catalog(context: ContextTypes.DEFAULT_TYPE) -> list[ModelEntry]:
     for model_id in pollinations_image_models:
         catalog.append(
             ModelEntry(
-                key=model_key(PROVIDER_POLLINATIONS, model_id),
+                key=model_key(PROVIDER_POLLINATIONS, model_id, MODEL_TYPE_IMAGE),
                 provider_id=PROVIDER_POLLINATIONS,
                 model_id=model_id,
                 model_type=MODEL_TYPE_IMAGE,
@@ -1358,7 +1427,7 @@ def build_model_catalog(context: ContextTypes.DEFAULT_TYPE) -> list[ModelEntry]:
     for model_id in pollinations_video_models:
         catalog.append(
             ModelEntry(
-                key=model_key(PROVIDER_POLLINATIONS, model_id),
+                key=model_key(PROVIDER_POLLINATIONS, model_id, MODEL_TYPE_VIDEO),
                 provider_id=PROVIDER_POLLINATIONS,
                 model_id=model_id,
                 model_type=MODEL_TYPE_VIDEO,
@@ -1515,7 +1584,7 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
         state["selected_agent_id"] = found.agent_id
         state["history"] = initial_history(state.get("selected_role_id"))
-        state["selected_model_key"] = model_key(found.provider_id, found.model_id)
+        state["selected_model_key"] = model_key(found.provider_id, found.model_id, MODEL_TYPE_CHAT)
         await query.edit_message_text(
             f"Выбран агент: {found.agent_id}\n{provider_title(found.provider_id)} | {found.model_id}"
         )
@@ -1591,6 +1660,7 @@ async def try_with_fallbacks(
     current_model: str,
     history: list[dict[str, str]],
     models: list[str],
+    allow_model_fallback: bool = True,
 ) -> ProviderResult:
     try:
         answer, usage = await client.chat_with_usage(current_model, history)
@@ -1622,8 +1692,15 @@ async def try_with_fallbacks(
 
         if not has_rate_limit_error(code, detail):
             return ProviderResult(None, None, f"Ошибка {client.title} (HTTP {code}):\n{detail[:900]}", None)
+        if not allow_model_fallback:
+            return ProviderResult(None, None, f"Ошибка {client.title} (HTTP {code}):\n{detail[:220]}", None)
     except Exception as e:
+        if not allow_model_fallback:
+            return ProviderResult(None, None, f"Ошибка запроса {client.title}: {e}", None)
         return ProviderResult(None, None, f"Ошибка запроса {client.title}: {e}", None)
+
+    if not allow_model_fallback:
+        return ProviderResult(None, None, "Модель недоступна.", None)
 
     candidates = [m for m in models if m != current_model]
     for alt in candidates:
@@ -1746,23 +1823,43 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             state["history"] = history
 
         await update.message.chat.send_action("typing")
-        client = context.bot_data["providers"][entry.provider_id]
-        models = context.bot_data.get(current_models_key(entry.provider_id), [])
-        result = await try_with_fallbacks(client, entry.provider_id, entry.model_id, history, models)
-
-        if result.warning and result.answer is None:
-            await update.message.reply_text(result.warning, reply_markup=menu_keyboard(), parse_mode=ParseMode.HTML)
+        providers = entry.providers or [entry.provider_id]
+        last_warning: str | None = None
+        result: ProviderResult | None = None
+        used_provider: str | None = None
+        for provider_id in providers:
+            client = context.bot_data["providers"].get(provider_id)
+            if not client:
+                continue
+            models = context.bot_data.get(current_models_key(provider_id), [])
+            if entry.model_id not in models:
+                continue
+            attempt = await try_with_fallbacks(
+                client,
+                provider_id,
+                entry.model_id,
+                history,
+                models,
+                allow_model_fallback=False,
+            )
+            if attempt.answer:
+                result = attempt
+                used_provider = provider_id
+                break
+            if attempt.warning:
+                last_warning = attempt.warning
+        if not result:
+            await update.message.reply_text(
+                last_warning or "Не удалось получить ответ от модели.",
+                reply_markup=menu_keyboard(),
+                parse_mode=ParseMode.HTML,
+            )
             return
+
         if result.warning:
             await update.message.reply_text(result.warning, parse_mode=ParseMode.HTML)
-        if not result.answer:
-            await update.message.reply_text("Не удалось получить ответ от модели.", reply_markup=menu_keyboard())
-            return
-
         used_model = result.model_used or entry.model_id
-        if result.model_used and result.model_used != entry.model_id:
-            state["selected_model_key"] = model_key(entry.provider_id, result.model_used)
-        update_usage_stats(state, entry.provider_id, used_model, result.usage, text, result.answer)
+        update_usage_stats(state, used_provider or entry.provider_id, used_model, result.usage, text, result.answer)
 
         history.append({"role": "assistant", "content": result.answer})
         if len(history) > MAX_HISTORY_MESSAGES:
@@ -1845,6 +1942,7 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
     pollinations_enabled = bool(os.getenv("POLLINATIONS_ENABLE", "").strip())
     onlysq_key = os.getenv("ONLYSQ_API_KEY", "").strip() or None
     onlysq_enabled = os.getenv("ONLYSQ_ENABLE", "1").strip().lower() not in {"0", "false", "no"}
+    puter_token = os.getenv("PUTER_AUTH_TOKEN", "").strip() or None
     token_limits_env = os.getenv("MODEL_TOKEN_LIMITS")
     request_limits_env = os.getenv("MODEL_REQUEST_LIMITS")
 
@@ -1860,6 +1958,7 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
         and not legnext_key
         and not pollinations_enabled
         and not onlysq_enabled
+        and not puter_token
     ):
         raise RuntimeError(
             "Set at least one key: OPENROUTER_API_KEY, GROQ_API_KEY, HF_API_KEY, MISTRAL_API_KEY, SILICONFLOW_API_KEY, POLLINATIONS_API_KEY, or LEGNEXT_API_KEY"
@@ -1940,6 +2039,9 @@ def main() -> None:
     onlysq_enabled = os.getenv("ONLYSQ_ENABLE", "1").strip().lower() not in {"0", "false", "no"}
     if onlysq_enabled:
         providers[PROVIDER_ONLYSQ] = OnlySqClient(os.getenv("ONLYSQ_API_KEY"))
+    puter_token = os.getenv("PUTER_AUTH_TOKEN", "").strip() or None
+    if puter_token:
+        providers[PROVIDER_PUTER] = PuterClient(puter_token)
 
     app = Application.builder().token(tg_token).build()
     app.bot_data["providers"] = providers
@@ -1951,6 +2053,8 @@ def main() -> None:
         available_providers.add(PROVIDER_POLLINATIONS)
     if onlysq_enabled:
         available_providers.add(PROVIDER_ONLYSQ)
+    if puter_token:
+        available_providers.add(PROVIDER_PUTER)
     app.bot_data["available_providers"] = available_providers
     app.bot_data["global_agents"] = []
     app.bot_data["models_catalog"] = []

@@ -30,6 +30,8 @@ services:
         sync: false
       - key: ONLYSQ_API_KEY
         sync: false
+      - key: PUTER_AUTH_TOKEN
+        sync: false
       - key: POLLINATIONS_TEXT_MODELS
         sync: false
       - key: POLLINATIONS_IMAGE_MODELS
