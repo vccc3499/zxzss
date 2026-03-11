@@ -25,6 +25,8 @@ GROQ_BASE = "https://api.groq.com/openai/v1"
 MISTRAL_BASE = "https://api.mistral.ai/v1"
 SILICONFLOW_BASE = "https://api.siliconflow.com/v1"
 LEGNEXT_BASE = os.getenv("LEGNEXT_BASE_URL", "https://api.legnext.ai/api/v1")
+ONLYSQ_BASE = "https://api.onlysq.ru/ai"
+ONLYSQ_OPENAI_BASE = "https://api.onlysq.ru/ai/openai"
 POLLINATIONS_TEXT_BASES = (
     "https://gen.pollinations.ai/v1",
     "https://text.pollinations.ai/openai/v1",
@@ -45,8 +47,6 @@ TELEGRAM_MESSAGE_CHUNK = 3900
 
 BTN_PICK_MODEL = "Выбрать модель"
 BTN_REFRESH = "Обновить модели"
-BTN_AGENTS = "Агенты"
-BTN_ROLES = "Роли"
 BTN_CLEAR = "Очистить диалог"
 BTN_HELP = "Помощь"
 BTN_PROFILE = "Профиль"
@@ -59,6 +59,7 @@ PROVIDER_MISTRAL = "mistral"
 PROVIDER_SILICONFLOW = "siliconflow"
 PROVIDER_LEGNEXT = "legnext"
 PROVIDER_POLLINATIONS = "pollinations"
+PROVIDER_ONLYSQ = "onlysq"
 
 GROUP_ALL = "all"
 GROUP_FAST = "fast"
@@ -752,12 +753,64 @@ class PollinationsTextClient(BaseClient):
         raise RuntimeError("Pollinations chat failed")
 
 
+class OnlySqClient(BaseClient):
+    provider_id = PROVIDER_ONLYSQ
+    title = "OnlySQ"
+
+    def __init__(self, api_key: str | None):
+        self.api_key = api_key or "openai"
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Accept": "application/json",
+        }
+
+    async def get_candidate_models(self) -> list[str]:
+        data = await call_json_with_retry(f"{ONLYSQ_BASE}/models", "GET", None, self.headers)
+        items = data.get("data") if isinstance(data, dict) else data
+        ids: list[str] = []
+        for item in items or []:
+            if isinstance(item, str):
+                model_id = item
+                model_type = ""
+            else:
+                model_id = item.get("id") or item.get("model") or item.get("name") or ""
+                model_type = str(item.get("type") or item.get("modality") or "").lower()
+            if not model_id:
+                continue
+            if any(x in model_type for x in ("image", "video", "audio")):
+                continue
+            low = model_id.lower()
+            if any(x in low for x in ("image", "video", "vision", "audio")):
+                continue
+            ids.append(model_id)
+        return sorted(set(ids))
+
+    async def chat_with_usage(self, model: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, int] | None]:
+        payload = {"model": model, "messages": messages, "temperature": 0.6}
+        data = await call_json_with_retry(
+            f"{ONLYSQ_OPENAI_BASE}/chat/completions",
+            "POST",
+            payload,
+            self.headers,
+        )
+        text = data["choices"][0]["message"]["content"].strip()
+        usage_raw = data.get("usage", {}) or {}
+        usage = {
+            "prompt_tokens": int(usage_raw.get("prompt_tokens", 0) or 0),
+            "completion_tokens": int(usage_raw.get("completion_tokens", 0) or 0),
+            "total_tokens": int(usage_raw.get("total_tokens", 0) or 0),
+        }
+        return text, usage
+
+
 def menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [BTN_REFRESH, BTN_PICK_MODEL, BTN_AGENTS],
-            [BTN_ROLES, BTN_CLEAR, BTN_PROFILE],
-            [BTN_LIMITS],
+            [BTN_REFRESH, BTN_PICK_MODEL],
+            [BTN_CLEAR, BTN_PROFILE, BTN_LIMITS],
             [BTN_HELP],
         ],
         resize_keyboard=True,
@@ -875,6 +928,8 @@ def provider_title(provider_id: str) -> str:
         return "Groq"
     if provider_id == PROVIDER_MISTRAL:
         return "Mistral"
+    if provider_id == PROVIDER_ONLYSQ:
+        return "OnlySQ"
     if provider_id == PROVIDER_SILICONFLOW:
         return "SiliconFlow"
     if provider_id == PROVIDER_LEGNEXT:
@@ -1184,8 +1239,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Роль: {current_role}\n"
         f"1) Нажми «{BTN_REFRESH}»\n"
         f"2) Нажми «{BTN_PICK_MODEL}»\n"
-        f"3) При желании выбери «{BTN_ROLES}» или «{BTN_AGENTS}»\n"
-        "4) Пиши сообщения",
+        "3) Пиши сообщения",
         parse_mode=ParseMode.HTML,
         reply_markup=menu_keyboard(),
     )
@@ -1197,8 +1251,6 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "<b>Управление</b>\n"
         "Используй только кнопки.\n"
         f"«{BTN_REFRESH}» - обновить модели без расхода токенов\n"
-        f"«{BTN_AGENTS}» - выбрать агента\n"
-        f"«{BTN_ROLES}» - выбрать специализацию (учитель, кодер и т.д.)\n"
         f"«{BTN_PICK_MODEL}» - ручной выбор модели (CHAT/IMG/VIDEO)\n"
         f"«{BTN_CLEAR}» - очистить диалог\n"
         f"«{BTN_PROFILE}» - посмотреть статистику запросов\n"
@@ -1330,7 +1382,7 @@ async def refresh_all_cmd(
     total_all = 0
 
     for provider_id in sorted(providers):
-        ok_count, all_count, details = await refresh_provider_models(context, provider_id, verify=False)
+        ok_count, all_count, details = await refresh_provider_models(context, provider_id, verify=True)
         total_ok += ok_count
         total_all += all_count
         lines.append(f"{provider_title(provider_id)}: {ok_count}/{all_count}")
@@ -1351,7 +1403,7 @@ async def refresh_all_cmd(
         if agents and not ustate.get("selected_agent_id"):
             ustate["selected_agent_id"] = agents[0].agent_id
     lines.append(f"Собрано агентов: {len(agents)} (лимит {MAX_GLOBAL_AGENTS}).")
-    lines.append(f"Открой «{BTN_AGENTS}» и выбери агента.")
+    lines.append(f"Открой «{BTN_PICK_MODEL}» и выбери модель.")
     await status_msg.edit_text("\n".join(lines))
     if not notify_only:
         await update.message.reply_text(
@@ -1649,12 +1701,6 @@ async def legnext_wait_result(api_key: str, task_id: str, timeout_sec: int = 180
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.message.text or "").strip()
     low = text.lower()
-    if low == BTN_AGENTS.lower():
-        await show_agents_picker(update.message, context, page=0)
-        return
-    if low == BTN_ROLES.lower():
-        await show_roles_picker(update.message, context, page=0)
-        return
     if low == BTN_PICK_MODEL.lower():
         await show_models(update.message, context, page=0)
         return
@@ -1677,48 +1723,10 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = ensure_state(context)
     catalog_by_key: dict[str, ModelEntry] = context.bot_data.get("catalog_by_key", {})
 
-    selected_agent_id = state.get("selected_agent_id")
-    agent = find_agent_by_id(context, selected_agent_id) if selected_agent_id else None
-
-    if agent:
-        provider_id = agent.provider_id
-        selected_model = agent.model_id
-        history: list[dict[str, str]] = state["history"]
-        history.append({"role": "user", "content": text})
-        if len(history) > MAX_HISTORY_MESSAGES:
-            history = [history[0]] + history[-(MAX_HISTORY_MESSAGES - 1) :]
-            state["history"] = history
-
-        await update.message.chat.send_action("typing")
-        client: BaseClient = context.bot_data["providers"][provider_id]
-        models: list[str] = context.bot_data.get(current_models_key(provider_id), [])
-        result = await try_with_fallbacks(client, provider_id, selected_model, history, models)
-        if result.model_used and result.model_used != selected_model:
-            state["selected_agent_id"] = None
-
-        if result.warning and result.answer is None:
-            await update.message.reply_text(result.warning, reply_markup=menu_keyboard(), parse_mode=ParseMode.HTML)
-            return
-        if result.warning:
-            await update.message.reply_text(result.warning, parse_mode=ParseMode.HTML)
-        if not result.answer:
-            await update.message.reply_text("Не удалось получить ответ от модели.", reply_markup=menu_keyboard())
-            return
-
-        used_model = result.model_used or selected_model
-        update_usage_stats(state, provider_id, used_model, result.usage, text, result.answer)
-
-        history.append({"role": "assistant", "content": result.answer})
-        if len(history) > MAX_HISTORY_MESSAGES:
-            history = [history[0]] + history[-(MAX_HISTORY_MESSAGES - 1) :]
-            state["history"] = history
-        await reply_long(update.message, result.answer, reply_markup=menu_keyboard())
-        return
-
     selected_key = state.get("selected_model_key")
     if not selected_key:
         await update.message.reply_text(
-            f"Сначала выбери модель кнопкой «{BTN_PICK_MODEL}» или агента через /agents.",
+            f"Сначала выбери модель кнопкой «{BTN_PICK_MODEL}».",
             reply_markup=menu_keyboard(),
         )
         return
@@ -1835,12 +1843,24 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
     legnext_key = os.getenv("LEGNEXT_API_KEY", "").strip() or None
     pollinations_key = os.getenv("POLLINATIONS_API_KEY", "").strip() or None
     pollinations_enabled = bool(os.getenv("POLLINATIONS_ENABLE", "").strip())
+    onlysq_key = os.getenv("ONLYSQ_API_KEY", "").strip() or None
+    onlysq_enabled = os.getenv("ONLYSQ_ENABLE", "1").strip().lower() not in {"0", "false", "no"}
     token_limits_env = os.getenv("MODEL_TOKEN_LIMITS")
     request_limits_env = os.getenv("MODEL_REQUEST_LIMITS")
 
     if not tg_token:
         raise RuntimeError("Set TELEGRAM_BOT_TOKEN")
-    if not or_key and not groq_key and not hf_key and not mistral_key and not siliconflow_key and not pollinations_key and not legnext_key and not pollinations_enabled:
+    if (
+        not or_key
+        and not groq_key
+        and not hf_key
+        and not mistral_key
+        and not siliconflow_key
+        and not pollinations_key
+        and not legnext_key
+        and not pollinations_enabled
+        and not onlysq_enabled
+    ):
         raise RuntimeError(
             "Set at least one key: OPENROUTER_API_KEY, GROQ_API_KEY, HF_API_KEY, MISTRAL_API_KEY, SILICONFLOW_API_KEY, POLLINATIONS_API_KEY, or LEGNEXT_API_KEY"
         )
@@ -1917,6 +1937,10 @@ def main() -> None:
     if pollinations_enabled:
         providers[PROVIDER_POLLINATIONS] = PollinationsTextClient(pollinations_key, pollinations_text_models)
 
+    onlysq_enabled = os.getenv("ONLYSQ_ENABLE", "1").strip().lower() not in {"0", "false", "no"}
+    if onlysq_enabled:
+        providers[PROVIDER_ONLYSQ] = OnlySqClient(os.getenv("ONLYSQ_API_KEY"))
+
     app = Application.builder().token(tg_token).build()
     app.bot_data["providers"] = providers
     app.bot_data["chat_providers"] = set(providers.keys())
@@ -1925,6 +1949,8 @@ def main() -> None:
         available_providers.add(PROVIDER_LEGNEXT)
     if pollinations_enabled:
         available_providers.add(PROVIDER_POLLINATIONS)
+    if onlysq_enabled:
+        available_providers.add(PROVIDER_ONLYSQ)
     app.bot_data["available_providers"] = available_providers
     app.bot_data["global_agents"] = []
     app.bot_data["models_catalog"] = []

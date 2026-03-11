@@ -26,6 +26,10 @@ services:
         sync: false
       - key: POLLINATIONS_ENABLE
         sync: false
+      - key: ONLYSQ_ENABLE
+        sync: false
+      - key: ONLYSQ_API_KEY
+        sync: false
       - key: POLLINATIONS_TEXT_MODELS
         sync: false
       - key: POLLINATIONS_IMAGE_MODELS
