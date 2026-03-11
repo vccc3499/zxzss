@@ -419,7 +419,7 @@ class OpenRouterClient(BaseClient):
         for item in models:
             model_id = item.get("id", "")
             if ":free" in model_id:
-        free_ids.append(model_id)
+                free_ids.append(model_id)
         return sorted(set(free_ids))
 
     async def chat_with_usage(self, model: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, int] | None]:
@@ -1886,9 +1886,6 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     await update.message.reply_text("Провайдер медиа не поддерживается.", reply_markup=menu_keyboard())
-
-
-async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     err = context.error
     if update and isinstance(update, Update) and update.effective_message:
