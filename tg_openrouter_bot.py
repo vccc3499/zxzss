@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 from __future__ import annotations
 
 import asyncio
@@ -47,7 +47,6 @@ SYSTEM_PROMPT = "You are a helpful assistant. Keep answers concise and clear."
 TELEGRAM_MESSAGE_CHUNK = 3900
 
 BTN_PICK_MODEL = "Выбрать модель"
-BTN_REFRESH = "Обновить модели"
 BTN_CLEAR = "Очистить диалог"
 BTN_HELP = "Помощь"
 BTN_PROFILE = "Профиль"
@@ -420,7 +419,7 @@ class OpenRouterClient(BaseClient):
         for item in models:
             model_id = item.get("id", "")
             if ":free" in model_id:
-                free_ids.append(model_id)
+        free_ids.append(model_id)
         return sorted(set(free_ids))
 
     async def chat_with_usage(self, model: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, int] | None]:
@@ -525,7 +524,7 @@ class GroqClient(BaseClient):
                 "n": 1,
             }
             data = await call_json_with_retry(
-                f"{GROQ_BASE}/chat/completions",
+        f"{GROQ_BASE}/chat/completions",
                 "POST",
                 payload,
                 self.headers,
@@ -744,7 +743,7 @@ class PollinationsTextClient(BaseClient):
         for base in POLLINATIONS_TEXT_BASES:
             try:
                 data = await call_json_with_retry(
-                    f"{base}/chat/completions",
+            f"{base}/chat/completions",
                     "POST",
                     payload,
                     self.headers,
@@ -865,7 +864,7 @@ class PuterClient(BaseClient):
 def menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [BTN_REFRESH, BTN_PICK_MODEL],
+            [BTN_PICK_MODEL],
             [BTN_CLEAR, BTN_PROFILE, BTN_LIMITS],
             [BTN_HELP],
         ],
@@ -916,15 +915,15 @@ def models_keyboard(
     rows.append(
         [
             InlineKeyboardButton(
-                f"{'•' if model_type == MODEL_TYPE_CHAT else ''}CHAT",
+        f"{'•' if model_type == MODEL_TYPE_CHAT else ''}CHAT",
                 callback_data=f"t:{MODEL_TYPE_CHAT}",
             ),
             InlineKeyboardButton(
-                f"{'•' if model_type == MODEL_TYPE_IMAGE else ''}IMG",
+        f"{'•' if model_type == MODEL_TYPE_IMAGE else ''}IMG",
                 callback_data=f"t:{MODEL_TYPE_IMAGE}",
             ),
             InlineKeyboardButton(
-                f"{'•' if model_type == MODEL_TYPE_VIDEO else ''}VIDEO",
+        f"{'•' if model_type == MODEL_TYPE_VIDEO else ''}VIDEO",
                 callback_data=f"t:{MODEL_TYPE_VIDEO}",
             ),
         ]
@@ -934,15 +933,15 @@ def models_keyboard(
         rows.append(
             [
                 InlineKeyboardButton(
-                    f"{'•' if group_filter == GROUP_ALL else ''}ALL",
+            f"{'•' if group_filter == GROUP_ALL else ''}ALL",
                     callback_data=f"grp:{GROUP_ALL}",
                 ),
                 InlineKeyboardButton(
-                    f"{'•' if group_filter == GROUP_FAST else ''}FAST",
+            f"{'•' if group_filter == GROUP_FAST else ''}FAST",
                     callback_data=f"grp:{GROUP_FAST}",
                 ),
                 InlineKeyboardButton(
-                    f"{'•' if group_filter == GROUP_ECO else ''}ECO",
+            f"{'•' if group_filter == GROUP_ECO else ''}ECO",
                     callback_data=f"grp:{GROUP_ECO}",
                 ),
             ]
@@ -1033,7 +1032,7 @@ def find_agent_by_id(context: ContextTypes.DEFAULT_TYPE, agent_id: str) -> Agent
 
 def format_agents_list(agents: list[AgentSpec], limit: int = 50) -> str:
     if not agents:
-        return f"Список агентов пуст. Нажми «{BTN_REFRESH}»."
+        return f"Список агентов пуст."
     lines = ["<b>Агенты</b>", "Формат: /agent ID", ""]
     for agent in agents[:limit]:
         model_safe = html.escape(agent.model_id)
@@ -1105,7 +1104,7 @@ async def show_models(target_message, context: ContextTypes.DEFAULT_TYPE, page: 
     filtered = filter_model_entries(catalog, model_type, group_filter)
     if not filtered:
         await target_message.reply_text(
-            f"Список моделей ({model_type}) пуст. Нажми «{BTN_REFRESH}».",
+            f"Список моделей ({model_type}) пуст.",
             reply_markup=menu_keyboard(),
         )
         return
@@ -1124,7 +1123,7 @@ async def show_agents_picker(target_message, context: ContextTypes.DEFAULT_TYPE,
         context.bot_data["global_agents"] = agents
     if not agents:
         await target_message.reply_text(
-            f"Агенты пока не собраны. Нажми «{BTN_REFRESH}».",
+            f"Агенты пока не собраны.",
             reply_markup=menu_keyboard(),
         )
         return
@@ -1301,9 +1300,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"Провайдеры: {providers_text}\n"
         "Типы: CHAT / IMG / VIDEO\n"
         f"Роль: {current_role}\n"
-        f"1) Нажми «{BTN_REFRESH}»\n"
-        f"2) Нажми «{BTN_PICK_MODEL}»\n"
-        "3) Пиши сообщения",
+        f"1) Нажми «{BTN_PICK_MODEL}»\n"
+        "2) Пиши сообщения",
         parse_mode=ParseMode.HTML,
         reply_markup=menu_keyboard(),
     )
@@ -1314,7 +1312,6 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "<b>Управление</b>\n"
         "Используй только кнопки.\n"
-        f"«{BTN_REFRESH}» - обновить модели без расхода токенов\n"
         f"«{BTN_PICK_MODEL}» - ручной выбор модели (CHAT/IMG/VIDEO)\n"
         f"«{BTN_CLEAR}» - очистить диалог\n"
         f"«{BTN_PROFILE}» - посмотреть статистику запросов\n"
@@ -1333,43 +1330,14 @@ async def refresh_provider_models(
     provider_id: str,
     verify: bool = False,
 ) -> tuple[int, int, str]:
-    client: BaseClient = context.bot_data["providers"][provider_id]
-    try:
-        models = await client.get_candidate_models()
-    except urllib.error.HTTPError as e:
-        code, detail = parse_http_error(e)
-        return 0, 0, f"Ошибка {client.title} (HTTP {code}):\n{detail[:900]}"
-    except Exception as e:
-        return 0, 0, f"Не удалось обновить модели {client.title}: {e}"
-
+    models = list(STATIC_CHAT_MODELS.get(provider_id, []))
     if not models:
         context.bot_data[current_models_key(provider_id)] = []
-        return 0, 0, f"Не найдено моделей для {client.title}."
-
-    if not verify:
-        context.bot_data[current_models_key(provider_id)] = models
         context.bot_data[f"unavailable:{provider_id}"] = []
-        return len(models), len(models), (
-            f"Готово ({client.title}). Загружено {len(models)} моделей без health-check (без расхода токенов)."
-        )
-
-    sem = asyncio.Semaphore(MODEL_CHECK_CONCURRENCY)
-
-    async def run_check(model_id: str) -> tuple[str, bool, str]:
-        async with sem:
-            ok, reason = await client.check_model(model_id)
-            return model_id, ok, reason
-
-    results = await asyncio.gather(*(run_check(m) for m in models))
-    good = [m for m, ok, _ in results if ok]
-    bad = [(m, r) for m, ok, r in results if not ok]
-    context.bot_data[current_models_key(provider_id)] = good
-    context.bot_data[f"unavailable:{provider_id}"] = bad
-
-    if good:
-        return len(good), len(models), f"Готово ({client.title}). Доступных: {len(good)} из {len(models)}. Скрыто: {len(bad)}."
-
-    return 0, len(models), f"Сейчас нет доступных моделей {client.title}. Попробуй позже."
+        return 0, 0, f"Не найдено моделей для {provider_title(provider_id)}."
+    context.bot_data[current_models_key(provider_id)] = models
+    context.bot_data[f"unavailable:{provider_id}"] = []
+    return len(models), len(models), f"Готово ({provider_title(provider_id)})."
 
 
 def build_model_catalog(context: ContextTypes.DEFAULT_TYPE) -> list[ModelEntry]:
@@ -1444,26 +1412,16 @@ async def refresh_all_cmd(
     context: ContextTypes.DEFAULT_TYPE,
     notify_only: bool = False,
 ) -> None:
-    status_msg = await update.message.reply_text("Обновляю модели всех провайдеров...")
-    providers: set[str] = context.bot_data.get("chat_providers", set())
-    lines: list[str] = []
-    total_ok = 0
-    total_all = 0
-
-    for provider_id in sorted(providers):
-        ok_count, all_count, details = await refresh_provider_models(context, provider_id, verify=True)
-        total_ok += ok_count
-        total_all += all_count
-        lines.append(f"{provider_title(provider_id)}: {ok_count}/{all_count}")
-        lines.append(details[:220])
-        lines.append("")
+    # Use static pre-verified lists to avoid slow refresh checks.
+    for provider_id in sorted(context.bot_data.get("chat_providers", set())):
+        models = list(STATIC_CHAT_MODELS.get(provider_id, []))
+        context.bot_data[current_models_key(provider_id)] = models
+        context.bot_data[f"unavailable:{provider_id}"] = []
 
     agents = build_global_agents(context)
     context.bot_data["global_agents"] = agents
     catalog = build_model_catalog(context)
-    media_count = sum(1 for entry in catalog if entry.model_type != MODEL_TYPE_CHAT)
-    if media_count:
-        lines.append(f"Медиа-моделей: {media_count}")
+
     if update.effective_user:
         ustate = ensure_state(context)
         if catalog and not ustate.get("selected_model_key"):
@@ -1471,14 +1429,16 @@ async def refresh_all_cmd(
             ustate["selected_model_key"] = (first_chat.key if first_chat else catalog[0].key)
         if agents and not ustate.get("selected_agent_id"):
             ustate["selected_agent_id"] = agents[0].agent_id
-    lines.append(f"Собрано агентов: {len(agents)} (лимит {MAX_GLOBAL_AGENTS}).")
-    lines.append(f"Открой «{BTN_PICK_MODEL}» и выбери модель.")
-    await status_msg.edit_text("\n".join(lines))
-    if not notify_only:
-        await update.message.reply_text(
-            f"Итог по всем провайдерам: {total_ok}/{total_all}",
-            reply_markup=menu_keyboard(),
-        )
+
+    if notify_only:
+        return
+
+    chat_count = sum(1 for entry in catalog if entry.model_type == MODEL_TYPE_CHAT)
+    media_count = sum(1 for entry in catalog if entry.model_type != MODEL_TYPE_CHAT)
+    await update.message.reply_text(
+        f"Меню готово. Моделей: {chat_count}. Медиа: {media_count}.",
+        reply_markup=menu_keyboard(),
+    )
 
 
 async def agents_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1709,7 +1669,7 @@ async def try_with_fallbacks(
             return ProviderResult(
                 alt,
                 answer,
-                f"Текущая модель недоступна, автоматически переключил на:\n<code>{alt}</code>",
+        f"Текущая модель недоступна, автоматически переключил на:\n<code>{alt}</code>",
                 usage,
             )
         except urllib.error.HTTPError as e:
@@ -1722,7 +1682,7 @@ async def try_with_fallbacks(
                         answer,
                         (
                             "Автопереключение сработало. "
-                            f"Выбрана модель:\n<code>{alt}</code>\n(запрос отправлен без system-инструкции)"
+                    f"Выбрана модель:\n<code>{alt}</code>\n(запрос отправлен без system-инструкции)"
                         ),
                         usage,
                     )
@@ -1732,7 +1692,7 @@ async def try_with_fallbacks(
         except Exception:
             continue
 
-    return ProviderResult(None, None, "Сейчас нет доступных моделей. Нажми «Обновить модели» и попробуй позже.", None)
+    return ProviderResult(None, None, "Сейчас нет доступных моделей. Попробуй позже.", None)
 
 
 def pollinations_media_url(prompt: str, model_id: str, media_type: str, api_key: str | None) -> str:
@@ -1781,9 +1741,6 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if low == BTN_PICK_MODEL.lower():
         await show_models(update.message, context, page=0)
         return
-    if low == BTN_REFRESH.lower():
-        await refresh_models(update, context)
-        return
     if low == BTN_CLEAR.lower():
         await clear_cmd(update, context)
         return
@@ -1810,7 +1767,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     entry = catalog_by_key.get(selected_key)
     if not entry:
         await update.message.reply_text(
-            f"Текущая модель не найдена. Нажми «{BTN_REFRESH}» и выбери заново.",
+            f"Текущая модель не найдена. Нажми «{BTN_PICK_MODEL}» и выбери заново.",
             reply_markup=menu_keyboard(),
         )
         return
@@ -1824,30 +1781,37 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         await update.message.chat.send_action("typing")
         providers = entry.providers or [entry.provider_id]
-        last_warning: str | None = None
-        result: ProviderResult | None = None
-        used_provider: str | None = None
-        for provider_id in providers:
-            client = context.bot_data["providers"].get(provider_id)
-            if not client:
-                continue
-            models = context.bot_data.get(current_models_key(provider_id), [])
-            if entry.model_id not in models:
-                continue
-            attempt = await try_with_fallbacks(
-                client,
-                provider_id,
-                entry.model_id,
-                history,
-                models,
-                allow_model_fallback=False,
-            )
-            if attempt.answer:
-                result = attempt
-                used_provider = provider_id
-                break
-            if attempt.warning:
-                last_warning = attempt.warning
+
+        async def run_chat() -> tuple[ProviderResult | None, str | None, str | None]:
+            last_warning_local: str | None = None
+            for provider_id in providers:
+                client = context.bot_data["providers"].get(provider_id)
+                if not client:
+                    continue
+                models = context.bot_data.get(current_models_key(provider_id), [])
+                if entry.model_id not in models:
+                    continue
+                attempt = await try_with_fallbacks(
+                    client,
+                    provider_id,
+                    entry.model_id,
+                    history,
+                    models,
+                    allow_model_fallback=False,
+                )
+                if attempt.answer:
+                    return attempt, provider_id, last_warning_local
+                if attempt.warning:
+                    last_warning_local = attempt.warning
+            return None, None, last_warning_local
+
+        sem = context.bot_data.get("request_semaphore")
+        if sem:
+            async with sem:
+                result, used_provider, last_warning = await run_chat()
+        else:
+            result, used_provider, last_warning = await run_chat()
+
         if not result:
             await update.message.reply_text(
                 last_warning or "Не удалось получить ответ от модели.",
@@ -1924,6 +1888,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text("Провайдер медиа не поддерживается.", reply_markup=menu_keyboard())
 
 
+async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     err = context.error
     if update and isinstance(update, Update) and update.effective_message:
@@ -2086,6 +2051,7 @@ def main() -> None:
     )
     app.bot_data["token_limits"] = parse_limit_map(token_limits_env)
     app.bot_data["request_limits"] = parse_limit_map(request_limits_env)
+    app.bot_data["request_semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback_router))
