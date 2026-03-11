@@ -1894,6 +1894,8 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
 
 def main() -> None:
     tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, legnext_key, pollinations_key = validate_env()
+    token_limits_env = os.getenv("MODEL_TOKEN_LIMITS")
+    request_limits_env = os.getenv("MODEL_REQUEST_LIMITS")
     providers: dict[str, BaseClient] = {}
 
     if or_key:
