@@ -1809,6 +1809,55 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         await handle_image_request(update, context, entry, text)
         return
     await handle_video_request(update, context, entry, text)
+
+async def handle_image_request(update: Update, context: ContextTypes.DEFAULT_TYPE, entry: ModelEntry, prompt: str) -> None:
+    provider_id = entry.provider_id
+    if provider_id == PROVIDER_POLLINATIONS:
+        api_key = context.bot_data.get("pollinations_api_key")
+        url = build_pollinations_image_url(prompt, entry.model_id, api_key)
+        await update.message.reply_photo(photo=url, caption=f"{entry.model_id}")
+        return
+
+    if provider_id == PROVIDER_LEGNEXT:
+        api_key = context.bot_data.get("legnext_api_key")
+        if not api_key:
+            await update.message.reply_text("LegNext API ???? ?? ?????.", reply_markup=menu_keyboard())
+            return
+        task_id = await legnext_create_task(api_key, "image", entry.model_id, prompt)
+        result = await legnext_wait_result(api_key, task_id)
+        url = result.get("output_url") or result.get("url") or result.get("result", {}).get("url")
+        if not url:
+            await update.message.reply_text("?? ??????? ???????? ???????????.", reply_markup=menu_keyboard())
+            return
+        await update.message.reply_photo(photo=url, caption=f"{entry.model_id}")
+        return
+
+    await update.message.reply_text("????????? ?? ???????????? ????????? ???????????.", reply_markup=menu_keyboard())
+
+
+async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYPE, entry: ModelEntry, prompt: str) -> None:
+    provider_id = entry.provider_id
+    if provider_id == PROVIDER_POLLINATIONS:
+        api_key = context.bot_data.get("pollinations_api_key")
+        url = build_pollinations_video_url(prompt, entry.model_id, api_key)
+        await update.message.reply_text(url, reply_markup=menu_keyboard())
+        return
+
+    if provider_id == PROVIDER_LEGNEXT:
+        api_key = context.bot_data.get("legnext_api_key")
+        if not api_key:
+            await update.message.reply_text("LegNext API ???? ?? ?????.", reply_markup=menu_keyboard())
+            return
+        task_id = await legnext_create_task(api_key, "video", entry.model_id, prompt)
+        result = await legnext_wait_result(api_key, task_id)
+        url = result.get("output_url") or result.get("url") or result.get("result", {}).get("url")
+        if not url:
+            await update.message.reply_text("?? ??????? ???????? ?????.", reply_markup=menu_keyboard())
+            return
+        await update.message.reply_text(url, reply_markup=menu_keyboard())
+        return
+
+    await update.message.reply_text("????????? ?? ???????????? ????????? ?????.", reply_markup=menu_keyboard())
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     err = context.error
     if update and isinstance(update, Update) and update.effective_message:
