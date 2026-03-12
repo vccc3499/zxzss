@@ -27,7 +27,6 @@ SILICONFLOW_BASE = "https://api.siliconflow.com/v1"
 LEGNEXT_BASE = os.getenv("LEGNEXT_BASE_URL", "https://api.legnext.ai/api/v1")
 ONLYSQ_BASE = "https://api.onlysq.ru/ai"
 ONLYSQ_OPENAI_BASE = "https://api.onlysq.ru/ai/openai"
-PUTER_OPENAI_BASE = "https://api.puter.com/puterai/openai/v1"
 POLLINATIONS_TEXT_BASES = (
     "https://gen.pollinations.ai/v1",
     "https://text.pollinations.ai/openai/v1",
@@ -42,15 +41,16 @@ AGENTS_PAGE_SIZE = 8
 ROLES_PAGE_SIZE = 8
 MAX_HISTORY_MESSAGES = 200
 MODEL_CHECK_CONCURRENCY = 6
+MAX_CONCURRENT_REQUESTS = 3
 MAX_GLOBAL_AGENTS = 50
 SYSTEM_PROMPT = "You are a helpful assistant. Keep answers concise and clear."
 TELEGRAM_MESSAGE_CHUNK = 3900
 
-BTN_PICK_MODEL = "Выбрать модель"
-BTN_CLEAR = "Очистить диалог"
-BTN_HELP = "Помощь"
-BTN_PROFILE = "Профиль"
-BTN_LIMITS = "Лимиты"
+BTN_PICK_MODEL = "\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c"
+BTN_CLEAR = "\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433"
+BTN_HELP = "\u041f\u043e\u043c\u043e\u0449\u044c"
+BTN_PROFILE = "\u041f\u0440\u043e\u0444\u0438\u043b\u044c"
+BTN_LIMITS = "\u041b\u0438\u043c\u0438\u0442\u044b"
 
 PROVIDER_OPENROUTER = "openrouter"
 PROVIDER_GROQ = "groq"
@@ -60,7 +60,6 @@ PROVIDER_SILICONFLOW = "siliconflow"
 PROVIDER_LEGNEXT = "legnext"
 PROVIDER_POLLINATIONS = "pollinations"
 PROVIDER_ONLYSQ = "onlysq"
-PROVIDER_PUTER = "puter"
 
 GROUP_ALL = "all"
 GROUP_FAST = "fast"
@@ -87,14 +86,6 @@ DEFAULT_POLLINATIONS_IMAGE_MODELS = ["flux", "gptimage-large", "seedream", "kont
 DEFAULT_POLLINATIONS_VIDEO_MODELS = ["seedance", "veo"]
 DEFAULT_LEGNEXT_IMAGE_MODELS = ["midjourney"]
 DEFAULT_LEGNEXT_VIDEO_MODELS = ["midjourney-video"]
-DEFAULT_PUTER_MODELS = [
-    "nvidia/llama-3.1-nemotron-70b-instruct",
-    "nvidia/llama-3.3-nemotron-70b-instruct",
-    "nvidia/llama-3.3-nemotron-49b-instruct",
-    "nvidia/llama-3.1-nemotron-51b-instruct",
-    "nvidia/llama-3.1-nemotron-4b-instruct",
-]
-
 
 def model_group(provider_id: str, model_id: str) -> str:
     m = model_id.lower()
@@ -817,55 +808,11 @@ class OnlySqClient(BaseClient):
         return text, usage
 
 
-class PuterClient(BaseClient):
-    provider_id = PROVIDER_PUTER
-    title = "Puter"
-
-    def __init__(self, auth_token: str):
-        self.auth_token = auth_token
-
-    @property
-    def headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.auth_token}",
-            "Accept": "application/json",
-        }
-
-    async def get_candidate_models(self) -> list[str]:
-        data = await call_json_with_retry(f"{PUTER_OPENAI_BASE}/models", "GET", None, self.headers)
-        items = data.get("data") if isinstance(data, dict) else data
-        ids: list[str] = []
-        for item in items or []:
-            model_id = item.get("id", "") if isinstance(item, dict) else str(item)
-            if model_id:
-                ids.append(model_id)
-        if not ids:
-            ids = DEFAULT_PUTER_MODELS.copy()
-        return sorted(set(ids))
-
-    async def chat_with_usage(self, model: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, int] | None]:
-        payload = {"model": model, "messages": messages, "temperature": 0.6}
-        data = await call_json_with_retry(
-            f"{PUTER_OPENAI_BASE}/chat/completions",
-            "POST",
-            payload,
-            self.headers,
-        )
-        text = data["choices"][0]["message"]["content"].strip()
-        usage_raw = data.get("usage", {}) or {}
-        usage = {
-            "prompt_tokens": int(usage_raw.get("prompt_tokens", 0) or 0),
-            "completion_tokens": int(usage_raw.get("completion_tokens", 0) or 0),
-            "total_tokens": int(usage_raw.get("total_tokens", 0) or 0),
-        }
-        return text, usage
-
-
 def menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
-            [BTN_PICK_MODEL],
-            [BTN_CLEAR, BTN_PROFILE, BTN_LIMITS],
+            [BTN_PICK_MODEL, BTN_CLEAR],
+            [BTN_PROFILE, BTN_LIMITS],
             [BTN_HELP],
         ],
         resize_keyboard=True,
@@ -991,8 +938,6 @@ def provider_title(provider_id: str) -> str:
         return "Mistral"
     if provider_id == PROVIDER_ONLYSQ:
         return "OnlySQ"
-    if provider_id == PROVIDER_PUTER:
-        return "Puter"
     if provider_id == PROVIDER_SILICONFLOW:
         return "SiliconFlow"
     if provider_id == PROVIDER_LEGNEXT:
@@ -1242,9 +1187,13 @@ def format_limits(state: dict[str, Any], context: ContextTypes.DEFAULT_TYPE) -> 
     usage_stats: dict[str, dict[str, dict[str, int]]] = state.get("usage_stats", {})
     catalog_by_key: dict[str, ModelEntry] = context.bot_data.get("catalog_by_key", {})
     if not usage_stats:
-        return "<b>Лимиты</b>\nНет статистики запросов. Сначала отправь хотя бы 1 запрос."
+        return (
+            "<b>\u041b\u0438\u043c\u0438\u0442\u044b</b>\n"
+            "\u041d\u0435\u0442 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0438 \u0437\u0430\u043f\u0440\u043e\u0441\u043e\u0432. "
+            "\u0421\u043d\u0430\u0447\u0430\u043b\u0430 \u043e\u0442\u043f\u0440\u0430\u0432\u044c \u0445\u043e\u0442\u044f \u0431\u044b 1 \u0437\u0430\u043f\u0440\u043e\u0441."
+        )
 
-    lines = ["<b>Лимиты</b>", ""]
+    lines = ["<b>\u041b\u0438\u043c\u0438\u0442\u044b</b>", ""]
     for provider_id in sorted(usage_stats.keys()):
         provider_stats = usage_stats.get(provider_id, {})
         if not provider_stats:
@@ -1275,10 +1224,11 @@ def format_limits(state: dict[str, Any], context: ContextTypes.DEFAULT_TYPE) -> 
             lines.extend(details)
             lines.append("")
         lines.append("")
-    lines.append("Указанные лимиты — оценочные. Для точных лимитов добавь переменные MODEL_TOKEN_LIMITS и MODEL_REQUEST_LIMITS.")
+    lines.append(
+        "\u041b\u0438\u043c\u0438\u0442\u044b \u043e\u0440\u0438\u0435\u043d\u0442\u0438\u0440\u043e\u0432\u043e\u0447\u043d\u044b\u0435. "
+        "\u0422\u043e\u0447\u043d\u044b\u0435 \u043b\u0438\u043c\u0438\u0442\u044b \u043c\u043e\u0436\u043d\u043e \u0437\u0430\u0434\u0430\u0442\u044c \u0447\u0435\u0440\u0435\u0437 MODEL_TOKEN_LIMITS \u0438 MODEL_REQUEST_LIMITS."
+    )
     return "\n".join(lines)
-
-
 async def limits_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     state = ensure_state(context)
     text = format_limits(state, context)
@@ -1297,30 +1247,25 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     providers_text = ", ".join(provider_title(p) for p in sorted(available))
     await update.message.reply_text(
         "<b>AI Bot</b>\n"
-        f"Провайдеры: {providers_text}\n"
-        "Типы: CHAT / IMG / VIDEO\n"
-        f"Роль: {current_role}\n"
-        f"1) Нажми «{BTN_PICK_MODEL}»\n"
-        "2) Пиши сообщения",
+        f"\u041f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u044b: {providers_text}\n"
+        "\u0422\u0438\u043f\u044b: CHAT / IMG / VIDEO\n"
+        f"\u0420\u043e\u043b\u044c: {current_role}\n"
+        "1) \u041d\u0430\u0436\u043c\u0438 \u00ab\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c\u00bb\n"
+        "2) \u041f\u0438\u0448\u0438 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
         parse_mode=ParseMode.HTML,
         reply_markup=menu_keyboard(),
     )
-    await refresh_all_cmd(update, context, notify_only=True)
-
-
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "<b>Управление</b>\n"
-        "Используй только кнопки.\n"
-        f"«{BTN_PICK_MODEL}» - ручной выбор модели (CHAT/IMG/VIDEO)\n"
-        f"«{BTN_CLEAR}» - очистить диалог\n"
-        f"«{BTN_PROFILE}» - посмотреть статистику запросов\n"
-        f"«{BTN_LIMITS}» - оценка оставшихся лимитов",
+        "<b>\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435</b>\n"
+        "\u0418\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0439 \u043a\u043d\u043e\u043f\u043a\u0438.\n"
+        "\u2022 \u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c \u2014 \u0432\u044b\u0431\u043e\u0440 \u043c\u043e\u0434\u0435\u043b\u0438\n"
+        "\u2022 \u041f\u0440\u043e\u0444\u0438\u043b\u044c \u2014 \u0438\u0441\u0442\u043e\u0440\u0438\u044f \u0438 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0430\n"
+        "\u2022 \u041b\u0438\u043c\u0438\u0442\u044b \u2014 \u043e\u0441\u0442\u0430\u0442\u043a\u0438 \u043f\u043e \u043c\u043e\u0434\u0435\u043b\u044f\u043c\n"
+        "\u2022 \u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433 \u2014 \u0441\u0431\u0440\u043e\u0441 \u0438\u0441\u0442\u043e\u0440\u0438\u0438",
         parse_mode=ParseMode.HTML,
         reply_markup=menu_keyboard(),
     )
-
-
 async def refresh_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await refresh_all_cmd(update, context, notify_only=False)
 
@@ -1737,20 +1682,19 @@ async def legnext_wait_result(api_key: str, task_id: str, timeout_sec: int = 180
 
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.message.text or "").strip()
-    low = text.lower()
-    if low == BTN_PICK_MODEL.lower():
+    if text == BTN_PICK_MODEL:
         await show_models(update.message, context, page=0)
         return
-    if low == BTN_CLEAR.lower():
+    if text == BTN_CLEAR:
         await clear_cmd(update, context)
         return
-    if low == BTN_PROFILE.lower():
+    if text == BTN_PROFILE:
         await profile_cmd(update, context)
         return
-    if low == BTN_LIMITS.lower():
+    if text == BTN_LIMITS:
         await limits_cmd(update, context)
         return
-    if low == BTN_HELP.lower():
+    if text == BTN_HELP:
         await help_cmd(update, context)
         return
 
@@ -1760,14 +1704,14 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     selected_key = state.get("selected_model_key")
     if not selected_key:
         await update.message.reply_text(
-            f"Сначала выбери модель кнопкой «{BTN_PICK_MODEL}».",
+            "Сначала выбери модель.",
             reply_markup=menu_keyboard(),
         )
         return
     entry = catalog_by_key.get(selected_key)
     if not entry:
         await update.message.reply_text(
-            f"Текущая модель не найдена. Нажми «{BTN_PICK_MODEL}» и выбери заново.",
+            "Текущая модель не найдена. Выбери другую.",
             reply_markup=menu_keyboard(),
         )
         return
@@ -1805,91 +1749,37 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     last_warning_local = attempt.warning
             return None, None, last_warning_local
 
-        sem = context.bot_data.get("request_semaphore")
-        if sem:
-            async with sem:
-                result, used_provider, last_warning = await run_chat()
-        else:
-            result, used_provider, last_warning = await run_chat()
+        semaphore: asyncio.Semaphore = context.bot_data["request_semaphore"]
+        async with semaphore:
+            result, used_provider, warning = await run_chat()
 
-        if not result:
+        if not result or not result.answer:
             await update.message.reply_text(
-                last_warning or "Не удалось получить ответ от модели.",
+                "Ответ не получен. Попробуй еще раз.",
                 reply_markup=menu_keyboard(),
-                parse_mode=ParseMode.HTML,
             )
             return
+        answer = result.answer
+        update_usage_stats(state, used_provider, entry.model_id, result.usage)
+        if warning:
+            await update.message.reply_text(warning, reply_markup=menu_keyboard())
 
-        if result.warning:
-            await update.message.reply_text(result.warning, parse_mode=ParseMode.HTML)
-        used_model = result.model_used or entry.model_id
-        update_usage_stats(state, used_provider or entry.provider_id, used_model, result.usage, text, result.answer)
-
-        history.append({"role": "assistant", "content": result.answer})
-        if len(history) > MAX_HISTORY_MESSAGES:
-            history = [history[0]] + history[-(MAX_HISTORY_MESSAGES - 1) :]
-            state["history"] = history
-        await reply_long(update.message, result.answer, reply_markup=menu_keyboard())
+        chunks = split_for_telegram(answer)
+        for i, part in enumerate(chunks):
+            if i == len(chunks) - 1:
+                await update.message.reply_text(part, reply_markup=menu_keyboard())
+            else:
+                await update.message.reply_text(part)
         return
 
     if entry.model_type == MODEL_TYPE_IMAGE:
-        await update.message.chat.send_action("upload_photo")
-    else:
-        await update.message.chat.send_action("upload_video")
-
-    if entry.provider_id == PROVIDER_LEGNEXT:
-        api_key = context.bot_data.get("legnext_api_key")
-        if not api_key:
-            await update.message.reply_text("LEGNEXT_API_KEY не задан.", reply_markup=menu_keyboard())
-            return
-        status_msg = await update.message.reply_text("Генерация в LegNext, подожди...")
-        endpoint = "diffusion" if entry.model_type == MODEL_TYPE_IMAGE else "video-diffusion"
-        payload = {"text": text, "model": entry.model_id}
-        task_id = await legnext_create_task(api_key, endpoint, payload)
-        if not task_id:
-            await status_msg.edit_text("LegNext не вернул task_id.")
-            return
-        data = await legnext_wait_result(api_key, task_id)
-        result_block = data.get("result") or {}
-        urls: list[str] = []
-        if entry.model_type == MODEL_TYPE_IMAGE:
-            urls = result_block.get("images") or result_block.get("image_urls") or data.get("images") or []
-        else:
-            urls = result_block.get("videos") or result_block.get("video_urls") or data.get("videos") or []
-        if not urls:
-            await status_msg.edit_text(f"LegNext завершил задачу. Task ID: {task_id}")
-        else:
-            await status_msg.edit_text(f"Готово. Task ID: {task_id}")
-            for url in urls[:4]:
-                try:
-                    if entry.model_type == MODEL_TYPE_IMAGE:
-                        await update.message.reply_photo(url)
-                    else:
-                        await update.message.reply_video(url)
-                except Exception:
-                    await update.message.reply_text(url)
-        update_usage_stats(state, entry.provider_id, entry.model_id, None, text, "")
+        await handle_image_request(update, context, entry, text)
         return
-
-    if entry.provider_id == PROVIDER_POLLINATIONS:
-        api_key = context.bot_data.get("pollinations_api_key")
-        media_type = "image" if entry.model_type == MODEL_TYPE_IMAGE else "video"
-        url = pollinations_media_url(text, entry.model_id, media_type, api_key)
-        try:
-            if entry.model_type == MODEL_TYPE_IMAGE:
-                await update.message.reply_photo(url)
-            else:
-                await update.message.reply_video(url)
-        except Exception:
-            await update.message.reply_text(url)
-        update_usage_stats(state, entry.provider_id, entry.model_id, None, text, "")
-        return
-
-    await update.message.reply_text("Провайдер медиа не поддерживается.", reply_markup=menu_keyboard())
+    await handle_video_request(update, context, entry, text)
 async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     err = context.error
     if update and isinstance(update, Update) and update.effective_message:
-        await update.effective_message.reply_text(f"Внутренняя ошибка бота: {err}")
+        await update.effective_message.reply_text(f"?????????? ?????? ????: {err}")
 
 
 def validate_env() -> tuple[str, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
@@ -1902,26 +1792,12 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
     legnext_key = os.getenv("LEGNEXT_API_KEY", "").strip() or None
     pollinations_key = os.getenv("POLLINATIONS_API_KEY", "").strip() or None
     pollinations_enabled = bool(os.getenv("POLLINATIONS_ENABLE", "").strip())
-    onlysq_key = os.getenv("ONLYSQ_API_KEY", "").strip() or None
     onlysq_enabled = os.getenv("ONLYSQ_ENABLE", "1").strip().lower() not in {"0", "false", "no"}
-    puter_token = os.getenv("PUTER_AUTH_TOKEN", "").strip() or None
-    token_limits_env = os.getenv("MODEL_TOKEN_LIMITS")
-    request_limits_env = os.getenv("MODEL_REQUEST_LIMITS")
 
     if not tg_token:
-        raise RuntimeError("Set TELEGRAM_BOT_TOKEN")
-    if (
-        not or_key
-        and not groq_key
-        and not hf_key
-        and not mistral_key
-        and not siliconflow_key
-        and not pollinations_key
-        and not legnext_key
-        and not pollinations_enabled
-        and not onlysq_enabled
-        and not puter_token
-    ):
+        raise RuntimeError("TELEGRAM_BOT_TOKEN is required")
+
+    if not any([or_key, groq_key, hf_key, mistral_key, siliconflow_key, legnext_key, pollinations_key, pollinations_enabled, onlysq_enabled]):
         raise RuntimeError(
             "Set at least one key: OPENROUTER_API_KEY, GROQ_API_KEY, HF_API_KEY, MISTRAL_API_KEY, SILICONFLOW_API_KEY, POLLINATIONS_API_KEY, or LEGNEXT_API_KEY"
         )
@@ -1971,8 +1847,6 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
             raise RuntimeError("POLLINATIONS_API_KEY must be ASCII") from e
 
     return tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, legnext_key, pollinations_key
-
-
 def main() -> None:
     tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, legnext_key, pollinations_key = validate_env()
     token_limits_env = os.getenv("MODEL_TOKEN_LIMITS")
@@ -2001,9 +1875,6 @@ def main() -> None:
     onlysq_enabled = os.getenv("ONLYSQ_ENABLE", "1").strip().lower() not in {"0", "false", "no"}
     if onlysq_enabled:
         providers[PROVIDER_ONLYSQ] = OnlySqClient(os.getenv("ONLYSQ_API_KEY"))
-    puter_token = os.getenv("PUTER_AUTH_TOKEN", "").strip() or None
-    if puter_token:
-        providers[PROVIDER_PUTER] = PuterClient(puter_token)
 
     app = Application.builder().token(tg_token).build()
     app.bot_data["providers"] = providers
@@ -2015,8 +1886,6 @@ def main() -> None:
         available_providers.add(PROVIDER_POLLINATIONS)
     if onlysq_enabled:
         available_providers.add(PROVIDER_ONLYSQ)
-    if puter_token:
-        available_providers.add(PROVIDER_PUTER)
     app.bot_data["available_providers"] = available_providers
     app.bot_data["global_agents"] = []
     app.bot_data["models_catalog"] = []
