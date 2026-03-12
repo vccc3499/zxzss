@@ -25,8 +25,6 @@ GROQ_BASE = "https://api.groq.com/openai/v1"
 MISTRAL_BASE = "https://api.mistral.ai/v1"
 SILICONFLOW_BASE = "https://api.siliconflow.com/v1"
 LEGNEXT_BASE = os.getenv("LEGNEXT_BASE_URL", "https://api.legnext.ai/api/v1")
-ONLYSQ_BASE = "https://api.onlysq.ru/ai"
-ONLYSQ_OPENAI_BASE = "https://api.onlysq.ru/ai/openai"
 POLLINATIONS_TEXT_BASES = (
     "https://gen.pollinations.ai/v1",
     "https://text.pollinations.ai/openai/v1",
@@ -59,7 +57,6 @@ PROVIDER_MISTRAL = "mistral"
 PROVIDER_SILICONFLOW = "siliconflow"
 PROVIDER_LEGNEXT = "legnext"
 PROVIDER_POLLINATIONS = "pollinations"
-PROVIDER_ONLYSQ = "onlysq"
 
 GROUP_ALL = "all"
 GROUP_FAST = "fast"
@@ -111,10 +108,6 @@ STATIC_CHAT_MODELS: dict[str, list[str]] = {
         "gemini",
         "deepseek",
         "qwen3-coder",
-    ],
-    PROVIDER_ONLYSQ: [
-        "gpt-4o-mini",
-        "gpt-4.1-nano",
     ],
 }
 
@@ -786,59 +779,6 @@ class PollinationsTextClient(BaseClient):
         raise RuntimeError("Pollinations chat failed")
 
 
-class OnlySqClient(BaseClient):
-    provider_id = PROVIDER_ONLYSQ
-    title = "OnlySQ"
-
-    def __init__(self, api_key: str | None):
-        self.api_key = api_key or "openai"
-
-    @property
-    def headers(self) -> dict[str, str]:
-        return {
-            "Authorization": f"Bearer {self.api_key}",
-            "Accept": "application/json",
-        }
-
-    async def get_candidate_models(self) -> list[str]:
-        data = await call_json_with_retry(f"{ONLYSQ_BASE}/models", "GET", None, self.headers)
-        items = data.get("data") if isinstance(data, dict) else data
-        ids: list[str] = []
-        for item in items or []:
-            if isinstance(item, str):
-                model_id = item
-                model_type = ""
-            else:
-                model_id = item.get("id") or item.get("model") or item.get("name") or ""
-                model_type = str(item.get("type") or item.get("modality") or "").lower()
-            if not model_id:
-                continue
-            if any(x in model_type for x in ("image", "video", "audio")):
-                continue
-            low = model_id.lower()
-            if any(x in low for x in ("image", "video", "vision", "audio")):
-                continue
-            ids.append(model_id)
-        return sorted(set(ids))
-
-    async def chat_with_usage(self, model: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, int] | None]:
-        payload = {"model": model, "messages": messages, "temperature": 0.6}
-        data = await call_json_with_retry(
-            f"{ONLYSQ_OPENAI_BASE}/chat/completions",
-            "POST",
-            payload,
-            self.headers,
-        )
-        text = data["choices"][0]["message"]["content"].strip()
-        usage_raw = data.get("usage", {}) or {}
-        usage = {
-            "prompt_tokens": int(usage_raw.get("prompt_tokens", 0) or 0),
-            "completion_tokens": int(usage_raw.get("completion_tokens", 0) or 0),
-            "total_tokens": int(usage_raw.get("total_tokens", 0) or 0),
-        }
-        return text, usage
-
-
 def menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
@@ -967,8 +907,6 @@ def provider_title(provider_id: str) -> str:
         return "Groq"
     if provider_id == PROVIDER_MISTRAL:
         return "Mistral"
-    if provider_id == PROVIDER_ONLYSQ:
-        return "OnlySQ"
     if provider_id == PROVIDER_SILICONFLOW:
         return "SiliconFlow"
     if provider_id == PROVIDER_LEGNEXT:
@@ -1793,7 +1731,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             )
             return
         answer = result.answer
-        update_usage_stats(state, used_provider, entry.model_id, result.usage)
+        update_usage_stats(state, used_provider, entry.model_id, result.usage, text, answer)
         if warning:
             await update.message.reply_text(warning, reply_markup=menu_keyboard())
 
@@ -1874,12 +1812,11 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
     legnext_key = os.getenv("LEGNEXT_API_KEY", "").strip() or None
     pollinations_key = os.getenv("POLLINATIONS_API_KEY", "").strip() or None
     pollinations_enabled = bool(os.getenv("POLLINATIONS_ENABLE", "").strip())
-    onlysq_enabled = os.getenv("ONLYSQ_ENABLE", "1").strip().lower() not in {"0", "false", "no"}
 
     if not tg_token:
         raise RuntimeError("TELEGRAM_BOT_TOKEN is required")
 
-    if not any([or_key, groq_key, hf_key, mistral_key, siliconflow_key, legnext_key, pollinations_key, pollinations_enabled, onlysq_enabled]):
+    if not any([or_key, groq_key, hf_key, mistral_key, siliconflow_key, legnext_key, pollinations_key, pollinations_enabled]):
         raise RuntimeError(
             "Set at least one key: OPENROUTER_API_KEY, GROQ_API_KEY, HF_API_KEY, MISTRAL_API_KEY, SILICONFLOW_API_KEY, POLLINATIONS_API_KEY, or LEGNEXT_API_KEY"
         )
@@ -1954,10 +1891,6 @@ def main() -> None:
     if pollinations_enabled:
         providers[PROVIDER_POLLINATIONS] = PollinationsTextClient(pollinations_key, pollinations_text_models)
 
-    onlysq_enabled = os.getenv("ONLYSQ_ENABLE", "1").strip().lower() not in {"0", "false", "no"}
-    if onlysq_enabled:
-        providers[PROVIDER_ONLYSQ] = OnlySqClient(os.getenv("ONLYSQ_API_KEY"))
-
     app = Application.builder().token(tg_token).build()
     app.bot_data["providers"] = providers
     app.bot_data["chat_providers"] = set(providers.keys())
@@ -1966,8 +1899,6 @@ def main() -> None:
         available_providers.add(PROVIDER_LEGNEXT)
     if pollinations_enabled:
         available_providers.add(PROVIDER_POLLINATIONS)
-    if onlysq_enabled:
-        available_providers.add(PROVIDER_ONLYSQ)
     app.bot_data["available_providers"] = available_providers
     app.bot_data["global_agents"] = []
     app.bot_data["models_catalog"] = []
