@@ -1044,23 +1044,24 @@ def roles_keyboard(selected_role_id: str | None, page: int = 0) -> InlineKeyboar
 async def show_models(target_message, context: ContextTypes.DEFAULT_TYPE, page: int = 0) -> None:
     state = ensure_state(context)
     catalog: list[ModelEntry] = context.bot_data.get("models_catalog", [])
+    if not catalog:
+        await refresh_all_cmd(target_message, context, notify_only=True)
+        catalog = context.bot_data.get("models_catalog", [])
     model_type: str = state.get("model_type_filter", MODEL_TYPE_CHAT)
     group_filter: str = state.get("model_group_filter", GROUP_ALL)
     filtered = filter_model_entries(catalog, model_type, group_filter)
     if not filtered:
         await target_message.reply_text(
-            f"Список моделей ({model_type}) пуст.",
+            f"\u0421\u043f\u0438\u0441\u043e\u043a \u043c\u043e\u0434\u0435\u043b\u0435\u0439 ({model_type}) \u043f\u0443\u0441\u0442.",
             reply_markup=menu_keyboard(),
         )
         return
     await target_message.reply_text(
-        "<b>Выбор модели</b>\n"
-        "CHAT: FAST = быстро тратят лимит, ECO = экономные.",
+        "<b>\u0412\u044b\u0431\u043e\u0440 \u043c\u043e\u0434\u0435\u043b\u0438</b>\n"
+        "CHAT: FAST = \u0431\u044b\u0441\u0442\u0440\u043e \u0442\u0440\u0430\u0442\u044f\u0442 \u043b\u0438\u043c\u0438\u0442, ECO = \u044d\u043a\u043e\u043d\u043e\u043c\u043d\u044b\u0435.",
         parse_mode=ParseMode.HTML,
         reply_markup=models_keyboard(filtered, page, model_type, group_filter),
     )
-
-
 async def show_agents_picker(target_message, context: ContextTypes.DEFAULT_TYPE, page: int = 0) -> None:
     agents: list[AgentSpec] = context.bot_data.get("global_agents", [])
     if not agents:
@@ -1245,6 +1246,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     current_role = role_title(state.get("selected_role_id"))
     available = context.bot_data.get("available_providers", set())
     providers_text = ", ".join(provider_title(p) for p in sorted(available))
+    await refresh_all_cmd(update, context, notify_only=True)
     await update.message.reply_text(
         "<b>AI Bot</b>\n"
         f"\u041f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u044b: {providers_text}\n"
