@@ -1653,6 +1653,7 @@ async def legnext_wait_result(api_key: str, task_id: str, timeout_sec: int = 180
 
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.message.text or "").strip()
+    await refresh_all_cmd(update, context, notify_only=True)
     if text == BTN_PICK_MODEL:
         await show_models(update.message, context, page=0)
         return
@@ -1752,7 +1753,7 @@ async def handle_image_request(update: Update, context: ContextTypes.DEFAULT_TYP
     provider_id = entry.provider_id
     if provider_id == PROVIDER_POLLINATIONS:
         api_key = context.bot_data.get("pollinations_api_key")
-        url = build_pollinations_image_url(prompt, entry.model_id, api_key)
+        url = pollinations_media_url(prompt, entry.model_id, "image", api_key)
         await update.message.reply_photo(photo=url, caption=f"{entry.model_id}")
         return
 
@@ -1777,7 +1778,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
     provider_id = entry.provider_id
     if provider_id == PROVIDER_POLLINATIONS:
         api_key = context.bot_data.get("pollinations_api_key")
-        url = build_pollinations_video_url(prompt, entry.model_id, api_key)
+        url = pollinations_media_url(prompt, entry.model_id, "video", api_key)
         await update.message.reply_text(url, reply_markup=menu_keyboard())
         return
 
