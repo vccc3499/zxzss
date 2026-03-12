@@ -86,6 +86,37 @@ DEFAULT_POLLINATIONS_IMAGE_MODELS = ["flux", "gptimage-large", "seedream", "kont
 DEFAULT_POLLINATIONS_VIDEO_MODELS = ["seedance", "veo"]
 DEFAULT_LEGNEXT_IMAGE_MODELS = ["midjourney"]
 DEFAULT_LEGNEXT_VIDEO_MODELS = ["midjourney-video"]
+STATIC_CHAT_MODELS: dict[str, list[str]] = {
+    PROVIDER_GROQ: [
+        "allam-2-7b",
+        "groq/compound",
+        "groq/compound-mini",
+        "llama-3.1-8b-instant",
+        "llama-3.3-70b-versatile",
+        "meta-llama/llama-4-scout-17b-16e-instruct",
+    ],
+    PROVIDER_OPENROUTER: [
+        "arcee-ai/trinity-large-preview:free",
+    ],
+    PROVIDER_HF: [
+        "CohereLabs/aya-expanse-32b",
+        "CohereLabs/c4ai-command-a-03-2025",
+        "CohereLabs/c4ai-command-r-08-2024",
+        "CohereLabs/c4ai-command-r7b-12-2024",
+        "CohereLabs/c4ai-command-r7b-arabic-02-2025",
+    ],
+    PROVIDER_POLLINATIONS: [
+        "gpt-5",
+        "claude",
+        "gemini",
+        "deepseek",
+        "qwen3-coder",
+    ],
+    PROVIDER_ONLYSQ: [
+        "gpt-4o-mini",
+        "gpt-4.1-nano",
+    ],
+}
 
 def model_group(provider_id: str, model_id: str) -> str:
     m = model_id.lower()
