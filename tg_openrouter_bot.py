@@ -2938,13 +2938,27 @@ def web_ui_html() -> str:
     }
 
     async function boot() {
-      const res = await fetch('/api/config');
-      const config = await res.json();
-      fillConfig(config);
-      if (!state.history.length) {
-        pushSystemMessage('**System online.** Select role, select model, then send your task.\n\nSupports code, neat lists, metadata cards and provider telemetry.');
-      } else {
-        renderHistory();
+      try {
+        const res = await fetch('/api/config');
+        if (!res.ok) {
+          throw new Error(`Config HTTP ${res.status}`);
+        }
+        const config = await res.json();
+        fillConfig(config);
+        if (!config.models || !config.models.length) {
+          pushSystemMessage('**No models loaded.** Backend returned an empty model catalog. Check provider keys and server logs.');
+          statusLine.textContent = 'No models available from backend.';
+          return;
+        }
+        if (!state.history.length) {
+          pushSystemMessage('**System online.** Select role, select model, then send your task.\\n\\nSupports code, neat lists, metadata cards and provider telemetry.');
+        } else {
+          renderHistory();
+        }
+      } catch (err) {
+        const message = err && err.message ? err.message : 'Config load failed';
+        pushSystemMessage(`**Boot error:** ${message}`);
+        statusLine.textContent = `Boot error: ${message}`;
       }
     }
 
@@ -3212,8 +3226,15 @@ def main() -> None:
                     self.wfile.write(body)
                     return
                 if self.path == "/api/config":
-                    payload = json.dumps(build_web_config(WEB_RUNTIME["bot_data"]), ensure_ascii=False).encode("utf-8")
-                    self.send_response(200)
+                    try:
+                        bot_data = WEB_RUNTIME.get("bot_data", {})
+                        payload_obj = build_web_config(bot_data)
+                        payload = json.dumps(payload_obj, ensure_ascii=False).encode("utf-8")
+                        status = 200
+                    except Exception as e:
+                        payload = json.dumps({"error": str(e), "models": [], "roles": []}, ensure_ascii=False).encode("utf-8")
+                        status = 500
+                    self.send_response(status)
                     self.send_header("Content-Type", "application/json; charset=utf-8")
                     self.send_header("Content-Length", str(len(payload)))
                     self.end_headers()
@@ -3240,6 +3261,8 @@ def main() -> None:
                 except Exception:
                     payload = {}
                 try:
+                    if "bot_data" not in WEB_RUNTIME:
+                        raise RuntimeError("WEB_RUNTIME bot_data is not initialized")
                     result = asyncio.run_coroutine_threadsafe(web_chat_response(payload), web_loop).result(timeout=180)
                     status = 200 if result.get("ok") else 400
                 except Exception as e:
