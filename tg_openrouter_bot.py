@@ -2276,6 +2276,10 @@ def build_web_config(bot_data: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def json_for_html(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False).replace("</", "<\\/")
+
+
 async def web_chat_response(payload: dict[str, Any]) -> dict[str, Any]:
     bot_data = WEB_RUNTIME["bot_data"]
     user_text = str(payload.get("message") or "").strip()
@@ -2337,7 +2341,8 @@ async def web_chat_response(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def web_ui_html() -> str:
-    return """<!doctype html>
+    config_json = json_for_html(build_web_config(WEB_RUNTIME.get("bot_data", {})))
+    html_template = r"""<!doctype html>
 <html lang="ru">
 <head>
   <meta charset="utf-8">
@@ -2681,6 +2686,29 @@ def web_ui_html() -> str:
     .bubble code {
       font-family: "JetBrains Mono", "Courier New", monospace;
     }
+    .code-wrap {
+      margin: 12px 0 0;
+      border: 1px solid rgba(0,242,255,0.22);
+      border-radius: 14px;
+      overflow: hidden;
+      box-shadow: inset 0 0 18px rgba(0,242,255,0.05);
+    }
+    .code-label {
+      padding: 8px 12px;
+      font-size: 12px;
+      color: var(--muted);
+      border-bottom: 1px solid rgba(0,242,255,0.14);
+      background: rgba(0,242,255,0.04);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .bubble ul {
+      margin: 10px 0 0;
+      padding-left: 20px;
+    }
+    .bubble p {
+      margin: 0;
+    }
     .composer {
       padding: 16px 22px 22px;
       border-top: 1px solid rgba(0,242,255,0.12);
@@ -2815,9 +2843,8 @@ def web_ui_html() -> str:
     </main>
   </div>
 
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
   <script>
+    const EMBEDDED_CONFIG = __CONFIG_JSON__;
     const state = {
       config: null,
       history: JSON.parse(localStorage.getItem('webHistory') || '[]')
@@ -2837,15 +2864,40 @@ def web_ui_html() -> str:
     const clearHistoryBtn = document.getElementById('clearHistoryBtn');
     const scrollBottomBtn = document.getElementById('scrollBottomBtn');
 
-    marked.setOptions({
-      breaks: true,
-      highlight(code, lang) {
-        if (lang && hljs.getLanguage(lang)) {
-          return hljs.highlight(code, { language: lang }).value;
+    function renderMarkdownLite(input) {
+      const source = String(input || '');
+      const codeBlocks = [];
+      const protectedText = source.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_, lang, code) => {
+        const token = `@@CODEBLOCK_${codeBlocks.length}@@`;
+        codeBlocks.push({
+          lang: (lang || 'code').trim(),
+          code: escapeHtml(code.trim())
+        });
+        return token;
+      });
+
+      const paragraphs = protectedText.split(/\n\n+/).map(chunk => chunk.trim()).filter(Boolean);
+      const rendered = paragraphs.map(chunk => {
+        const lines = chunk.split('\n');
+        const isList = lines.every(line => /^(-|\*)\s+/.test(line.trim()));
+        if (isList) {
+          const items = lines.map(line => `<li>${escapeHtml(line.replace(/^(-|\*)\s+/, ''))}</li>`).join('');
+          return `<ul>${items}</ul>`;
         }
-        return hljs.highlightAuto(code).value;
-      }
-    });
+        let html = escapeHtml(chunk)
+          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+          .replace(/`([^`]+)`/g, '<code>$1</code>')
+          .replace(/\n/g, '<br>');
+        return `<p>${html}</p>`;
+      }).join('');
+
+      let finalHtml = rendered;
+      codeBlocks.forEach((block, idx) => {
+        const markup = `<div class="code-wrap"><div class="code-label">${block.lang}</div><pre><code>${block.code}</code></pre></div>`;
+        finalHtml = finalHtml.replace(`@@CODEBLOCK_${idx}@@`, markup);
+      });
+      return finalHtml;
+    }
 
     function saveHistory() {
       localStorage.setItem('webHistory', JSON.stringify(state.history.slice(-20)));
@@ -2868,7 +2920,7 @@ def web_ui_html() -> str:
       const kind = item.kind || (item.role === 'user' ? 'user' : 'bot');
       const body = item.role === 'user'
         ? escapeHtml(item.content).replace(/\n/g, '<br>')
-        : marked.parse(item.content || '');
+        : renderMarkdownLite(item.content || '');
       const providerMeta = item.providerTitle
         ? `<span class="bubble-api">API ${escapeHtml(item.providerTitle)} | ${escapeHtml(item.modelId || '')}</span>`
         : '';
@@ -2885,7 +2937,6 @@ def web_ui_html() -> str:
 
     function renderHistory() {
       chatLog.innerHTML = state.history.map(bubbleHtml).join('');
-      chatLog.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
       chatLog.scrollTop = chatLog.scrollHeight;
     }
 
@@ -2939,11 +2990,7 @@ def web_ui_html() -> str:
 
     async function boot() {
       try {
-        const res = await fetch('/api/config');
-        if (!res.ok) {
-          throw new Error(`Config HTTP ${res.status}`);
-        }
-        const config = await res.json();
+        const config = EMBEDDED_CONFIG;
         fillConfig(config);
         if (!config.models || !config.models.length) {
           pushSystemMessage('**No models loaded.** Backend returned an empty model catalog. Check provider keys and server logs.');
@@ -3056,6 +3103,7 @@ def web_ui_html() -> str:
   </script>
 </body>
 </html>"""
+    return html_template.replace("__CONFIG_JSON__", config_json)
 
 
 def validate_env() -> tuple[str, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
