@@ -26,6 +26,7 @@ from telegram import (
     WebAppInfo,
 )
 from telegram.constants import ParseMode
+from telegram.error import NetworkError, RetryAfter, TimedOut
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
 
@@ -48,10 +49,12 @@ AGENTS_PAGE_SIZE = 8
 ROLES_PAGE_SIZE = 8
 MAX_HISTORY_MESSAGES = 200
 MODEL_CHECK_CONCURRENCY = 6
-MAX_CONCURRENT_REQUESTS = 3
+MAX_CONCURRENT_REQUESTS = 2
 MAX_GLOBAL_AGENTS = 50
 SYSTEM_PROMPT = "You are a helpful assistant. Keep answers concise and clear."
 TELEGRAM_MESSAGE_CHUNK = 3900
+TELEGRAM_SEND_RETRIES = 4
+TELEGRAM_SEND_DELAY_SEC = 0.08
 
 BTN_PICK_MODEL = "\U0001f9e0 \u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c"
 BTN_CLEAR = "\U0001f9f9 \u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433"
@@ -236,6 +239,34 @@ async def reply_long(message, text: str, reply_markup=None) -> None:
             await message.reply_text(part)
 
 
+async def telegram_api_call(bot_data: dict[str, Any] | None, func, *args, **kwargs):
+    semaphore: asyncio.Semaphore | None = None
+    if bot_data is not None:
+        semaphore = bot_data.get("telegram_send_semaphore")
+
+    async def _run():
+        last_exc: Exception | None = None
+        for attempt in range(TELEGRAM_SEND_RETRIES):
+            try:
+                if TELEGRAM_SEND_DELAY_SEC > 0:
+                    await asyncio.sleep(TELEGRAM_SEND_DELAY_SEC)
+                return await func(*args, **kwargs)
+            except RetryAfter as e:
+                last_exc = e
+                await asyncio.sleep(float(getattr(e, "retry_after", 1.0)) + 0.2)
+            except (TimedOut, NetworkError) as e:
+                last_exc = e
+                await asyncio.sleep(0.6 * (attempt + 1))
+        if last_exc:
+            raise last_exc
+        return await func(*args, **kwargs)
+
+    if semaphore is None:
+        return await _run()
+    async with semaphore:
+        return await _run()
+
+
 def provider_badge_html(provider_id: str | None, model_id: str | None) -> str:
     if not provider_id and not model_id:
         return ""
@@ -331,30 +362,31 @@ async def reply_answer(
     model_id: str | None,
     usage: dict[str, int] | None = None,
     elapsed_sec: float | None = None,
+    bot_data: dict[str, Any] | None = None,
     reply_markup=None,
 ) -> None:
     formatted = build_telegram_answer_html(answer, provider_id, model_id)
     metadata = format_metadata_html(provider_id, model_id, usage, elapsed_sec)
     combined = f"{formatted}\n\n{metadata}" if metadata else formatted
     if len(combined) <= TELEGRAM_MESSAGE_CHUNK:
-        await message.reply_text(combined, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        await telegram_api_call(bot_data, message.reply_text, combined, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
         return
 
     badge = provider_badge_html(provider_id, model_id)
     if badge:
-        await message.reply_text(badge, parse_mode=ParseMode.HTML)
+        await telegram_api_call(bot_data, message.reply_text, badge, parse_mode=ParseMode.HTML)
 
     chunks = split_for_telegram(answer)
     for i, part in enumerate(chunks):
         chunk_html = markdownish_to_telegram_html(part)
         if i == len(chunks) - 1 and reply_markup is not None:
-            await message.reply_text(chunk_html, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+            await telegram_api_call(bot_data, message.reply_text, chunk_html, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
         else:
-            await message.reply_text(chunk_html, parse_mode=ParseMode.HTML)
-    await message.reply_text(metadata, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+            await telegram_api_call(bot_data, message.reply_text, chunk_html, parse_mode=ParseMode.HTML)
+    await telegram_api_call(bot_data, message.reply_text, metadata, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
 
 
-async def progress_bar_updater(status_message, stop_event: asyncio.Event) -> None:
+async def progress_bar_updater(status_message, stop_event: asyncio.Event, bot_data: dict[str, Any] | None = None) -> None:
     frames = [10, 24, 39, 53, 67, 79, 90, 94]
     idx = 0
     while not stop_event.is_set():
@@ -362,7 +394,7 @@ async def progress_bar_updater(status_message, stop_event: asyncio.Event) -> Non
         filled = max(0, min(10, round(percent / 10)))
         bar = "█" * filled + "░" * (10 - filled)
         try:
-            await status_message.edit_text(f"Генерирую... [{bar}] {percent}%")
+            await telegram_api_call(bot_data, status_message.edit_text, f"Генерирую... [{bar}] {percent}%")
         except Exception:
             return
         idx += 1
@@ -372,21 +404,21 @@ async def progress_bar_updater(status_message, stop_event: asyncio.Event) -> Non
             continue
 
 
-async def start_progress_message(message):
-    status = await message.reply_text("Генерирую... [░░░░░░░░░░] 0%")
+async def start_progress_message(message, bot_data: dict[str, Any] | None = None):
+    status = await telegram_api_call(bot_data, message.reply_text, "Генерирую... [░░░░░░░░░░] 0%")
     stop_event = asyncio.Event()
-    task = asyncio.create_task(progress_bar_updater(status, stop_event))
+    task = asyncio.create_task(progress_bar_updater(status, stop_event, bot_data))
     return status, stop_event, task
 
 
-async def finish_progress_message(status_message, stop_event: asyncio.Event, task: asyncio.Task, ok: bool = True) -> None:
+async def finish_progress_message(status_message, stop_event: asyncio.Event, task: asyncio.Task, bot_data: dict[str, Any] | None = None, ok: bool = True) -> None:
     stop_event.set()
     try:
         await task
     except Exception:
         pass
     try:
-        await status_message.edit_text("Готово. [██████████] 100%" if ok else "Ошибка генерации.")
+        await telegram_api_call(bot_data, status_message.edit_text, "Готово. [██████████] 100%" if ok else "Ошибка генерации.")
     except Exception:
         pass
 
@@ -2106,14 +2138,14 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             state["history"] = history
 
         await update.message.chat.send_action("typing")
-        status_msg, stop_event, progress_task = await start_progress_message(update.message)
+        status_msg, stop_event, progress_task = await start_progress_message(update.message, context.bot_data)
         started_at = time.perf_counter()
         semaphore: asyncio.Semaphore = context.bot_data["request_semaphore"]
         try:
             async with semaphore:
                 result, used_provider, warning, actual_entry = await execute_chat_turn(context.bot_data, state, text)
         finally:
-            await finish_progress_message(status_msg, stop_event, progress_task, ok=True)
+            await finish_progress_message(status_msg, stop_event, progress_task, context.bot_data, ok=True)
 
         if not result or not result.answer:
             await update.message.reply_text(
@@ -2140,6 +2172,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             usage_model,
             usage=result.usage,
             elapsed_sec=elapsed_sec,
+            bot_data=context.bot_data,
             reply_markup=menu_keyboard(),
         )
         return
@@ -2807,7 +2840,7 @@ def main() -> None:
     if pollinations_enabled:
         providers[PROVIDER_POLLINATIONS] = PollinationsTextClient(pollinations_key, pollinations_text_models)
 
-    app = Application.builder().token(tg_token).build()
+    app = Application.builder().token(tg_token).concurrent_updates(False).build()
     app.bot_data["providers"] = providers
     app.bot_data["chat_providers"] = set(providers.keys())
     available_providers = set(providers.keys())
@@ -2847,6 +2880,7 @@ def main() -> None:
     app.bot_data["token_limits"] = parse_limit_map(token_limits_env)
     app.bot_data["request_limits"] = parse_limit_map(request_limits_env)
     app.bot_data["request_semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
+    app.bot_data["telegram_send_semaphore"] = asyncio.Semaphore(1)
 
     for provider_id in sorted(app.bot_data.get("chat_providers", set())):
         app.bot_data[current_models_key(provider_id)] = list(STATIC_CHAT_MODELS.get(provider_id, []))
