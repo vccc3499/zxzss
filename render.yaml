@@ -46,6 +46,8 @@ services:
         sync: false
       - key: POLLINATIONS_GEN_BASE
         sync: false
+      - key: SITE_URL
+        sync: false
       - key: MODEL_TOKEN_LIMITS
         sync: false
       - key: MODEL_REQUEST_LIMITS

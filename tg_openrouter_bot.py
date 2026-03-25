@@ -5,17 +5,26 @@ import asyncio
 import html
 import json
 import os
+import re
 import urllib.parse
 import urllib.error
 import urllib.request
 import socket
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, Update
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    KeyboardButton,
+    ReplyKeyboardMarkup,
+    Update,
+    WebAppInfo,
+)
 from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes, MessageHandler, filters
 
@@ -31,7 +40,7 @@ POLLINATIONS_TEXT_BASES = (
 )
 POLLINATIONS_GEN_BASE = os.getenv("POLLINATIONS_GEN_BASE", "https://gen.pollinations.ai")
 
-SITE_URL = "http://localhost"
+SITE_URL = os.getenv("SITE_URL", "http://localhost")
 SITE_NAME = "Telegram Multi-Provider AI Bot"
 
 PAGE_SIZE = 8
@@ -50,6 +59,9 @@ BTN_HELP = "\u2139\ufe0f \u041f\u043e\u043c\u043e\u0449\u044c"
 BTN_PROFILE = "\U0001f4ca \u041f\u0440\u043e\u0444\u0438\u043b\u044c"
 BTN_LIMITS = "\u23f1\ufe0f \u041b\u0438\u043c\u0438\u0442\u044b"
 BTN_ROLE = "\U0001f3ad \u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0440\u043e\u043b\u044c"
+BTN_WEB = "\U0001f310 Web UI"
+
+WEB_RUNTIME: dict[str, Any] = {}
 
 PROVIDER_OPENROUTER = "openrouter"
 PROVIDER_GROQ = "groq"
@@ -222,6 +234,161 @@ async def reply_long(message, text: str, reply_markup=None) -> None:
             await message.reply_text(part, reply_markup=reply_markup)
         else:
             await message.reply_text(part)
+
+
+def provider_badge_html(provider_id: str | None, model_id: str | None) -> str:
+    if not provider_id and not model_id:
+        return ""
+    title = provider_title(provider_id or "") if provider_id else "AI"
+    parts = [f"⚡ <b>{html.escape(title)}</b>"]
+    if model_id:
+        parts.append(f"<code>{html.escape(model_id)}</code>")
+    return " · ".join(parts)
+
+
+def _apply_inline_markup(text: str) -> str:
+    text = re.sub(r"\*\*(.+?)\*\*", lambda m: f"<b>{m.group(1)}</b>", text)
+    text = re.sub(r"`([^`\n]+)`", lambda m: f"<code>{m.group(1)}</code>", text)
+    return text
+
+
+def markdownish_to_telegram_html(text: str) -> str:
+    if not text:
+        return ""
+
+    parts: list[str] = []
+    last = 0
+    code_pattern = re.compile(r"```([a-zA-Z0-9_+-]*)\n?(.*?)```", re.DOTALL)
+    for match in code_pattern.finditer(text):
+        plain = text[last:match.start()]
+        if plain:
+            escaped = html.escape(plain)
+            escaped = _apply_inline_markup(escaped)
+            parts.append(escaped.replace("\n", "\n"))
+        lang = match.group(1).strip()
+        code = html.escape(match.group(2).strip("\n"))
+        if lang:
+            parts.append(f"<b>{html.escape(lang)}</b>\n<pre><code>{code}</code></pre>")
+        else:
+            parts.append(f"<pre><code>{code}</code></pre>")
+        last = match.end()
+
+    tail = text[last:]
+    if tail:
+        escaped = html.escape(tail)
+        escaped = _apply_inline_markup(escaped)
+        parts.append(escaped)
+    return "".join(parts)
+
+
+def build_telegram_answer_html(answer: str, provider_id: str | None, model_id: str | None) -> str:
+    badge = provider_badge_html(provider_id, model_id)
+    body = markdownish_to_telegram_html(answer)
+    if badge and body:
+        return f"{badge}\n\n{body}"
+    return badge or body
+
+
+def estimate_cost_usd(provider_id: str | None, usage: dict[str, int] | None) -> float:
+    if not provider_id or not usage:
+        return 0.0
+    # Current catalog is built around free/test models. Keep visible but honest.
+    return 0.0
+
+
+def format_metadata_lines(
+    provider_id: str | None,
+    model_id: str | None,
+    usage: dict[str, int] | None,
+    elapsed_sec: float | None,
+) -> list[str]:
+    total_tokens = int((usage or {}).get("total_tokens", 0) or 0)
+    prompt_tokens = int((usage or {}).get("prompt_tokens", 0) or 0)
+    completion_tokens = int((usage or {}).get("completion_tokens", 0) or 0)
+    cost = estimate_cost_usd(provider_id, usage)
+    return [
+        f"🤖 Модель: {model_id or '-'}",
+        f"🌐 API: {provider_title(provider_id or '') if provider_id else '-'}",
+        f"⏳ Время: {elapsed_sec:.1f} сек" if elapsed_sec is not None else "⏳ Время: -",
+        f"💳 Токены: {total_tokens} (in {prompt_tokens} / out {completion_tokens})",
+        f"💰 Цена: ${cost:.4f}",
+    ]
+
+
+def format_metadata_html(
+    provider_id: str | None,
+    model_id: str | None,
+    usage: dict[str, int] | None,
+    elapsed_sec: float | None,
+) -> str:
+    return "<pre>" + html.escape("\n".join(format_metadata_lines(provider_id, model_id, usage, elapsed_sec))) + "</pre>"
+
+
+async def reply_answer(
+    message,
+    answer: str,
+    provider_id: str | None,
+    model_id: str | None,
+    usage: dict[str, int] | None = None,
+    elapsed_sec: float | None = None,
+    reply_markup=None,
+) -> None:
+    formatted = build_telegram_answer_html(answer, provider_id, model_id)
+    metadata = format_metadata_html(provider_id, model_id, usage, elapsed_sec)
+    combined = f"{formatted}\n\n{metadata}" if metadata else formatted
+    if len(combined) <= TELEGRAM_MESSAGE_CHUNK:
+        await message.reply_text(combined, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        return
+
+    badge = provider_badge_html(provider_id, model_id)
+    if badge:
+        await message.reply_text(badge, parse_mode=ParseMode.HTML)
+
+    chunks = split_for_telegram(answer)
+    for i, part in enumerate(chunks):
+        chunk_html = markdownish_to_telegram_html(part)
+        if i == len(chunks) - 1 and reply_markup is not None:
+            await message.reply_text(chunk_html, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        else:
+            await message.reply_text(chunk_html, parse_mode=ParseMode.HTML)
+    await message.reply_text(metadata, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+
+
+async def progress_bar_updater(status_message, stop_event: asyncio.Event) -> None:
+    frames = [10, 24, 39, 53, 67, 79, 90, 94]
+    idx = 0
+    while not stop_event.is_set():
+        percent = frames[idx % len(frames)]
+        filled = max(0, min(10, round(percent / 10)))
+        bar = "█" * filled + "░" * (10 - filled)
+        try:
+            await status_message.edit_text(f"Генерирую... [{bar}] {percent}%")
+        except Exception:
+            return
+        idx += 1
+        try:
+            await asyncio.wait_for(stop_event.wait(), timeout=1.0)
+        except asyncio.TimeoutError:
+            continue
+
+
+async def start_progress_message(message):
+    status = await message.reply_text("Генерирую... [░░░░░░░░░░] 0%")
+    stop_event = asyncio.Event()
+    task = asyncio.create_task(progress_bar_updater(status, stop_event))
+    return status, stop_event, task
+
+
+async def finish_progress_message(status_message, stop_event: asyncio.Event, task: asyncio.Task, ok: bool = True) -> None:
+    stop_event.set()
+    try:
+        await task
+    except Exception:
+        pass
+    try:
+        await status_message.edit_text("Готово. [██████████] 100%" if ok else "Ошибка генерации.")
+    except Exception:
+        pass
 
 
 def _http_json(
@@ -865,14 +1032,30 @@ class PollinationsTextClient(BaseClient):
 
 
 def menu_keyboard() -> ReplyKeyboardMarkup:
-    return ReplyKeyboardMarkup(
+    rows: list[list[str | KeyboardButton]] = [
+        [BTN_PICK_MODEL, BTN_CLEAR],
+        [BTN_ROLE, BTN_PROFILE],
+        [BTN_LIMITS, BTN_HELP],
+    ]
+    if SITE_URL.startswith("https://"):
+        rows.append([KeyboardButton(BTN_WEB, web_app=WebAppInfo(url=SITE_URL))])
+    return ReplyKeyboardMarkup(rows, resize_keyboard=True)
+
+
+def start_shortcuts_keyboard() -> InlineKeyboardMarkup:
+    rows = [
         [
-            [BTN_PICK_MODEL, BTN_CLEAR],
-            [BTN_ROLE, BTN_PROFILE],
-            [BTN_LIMITS, BTN_HELP],
+            InlineKeyboardButton("🎭 Роль", callback_data="open_roles"),
+            InlineKeyboardButton("🧠 Модель", callback_data="open_models"),
         ],
-        resize_keyboard=True,
-    )
+        [
+            InlineKeyboardButton("📊 Профиль", callback_data="quick_profile"),
+            InlineKeyboardButton("⏱️ Лимиты", callback_data="quick_limits"),
+        ],
+    ]
+    if SITE_URL.startswith("https://"):
+        rows.append([InlineKeyboardButton("🌐 Открыть Web UI", url=SITE_URL)])
+    return InlineKeyboardMarkup(rows)
 
 
 def model_entry_label(entry: ModelEntry) -> str:
@@ -1303,26 +1486,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await refresh_all_cmd(update, context, notify_only=True)
     await update.message.reply_text(
         "<b>AI Bot</b>\n"
-        f"\u041f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u044b: {providers_text}\n"
-        "\u0422\u0438\u043f\u044b: CHAT / IMG / VIDEO\n"
-        f"\u0420\u043e\u043b\u044c: {current_role}\n"
-        "1) \u041d\u0430\u0436\u043c\u0438 \u00ab\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0440\u043e\u043b\u044c\u00bb\n"
-        "2) \u041d\u0430\u0436\u043c\u0438 \u00ab\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c\u00bb\n"
-        "3) \u041f\u0438\u0448\u0438 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+        "Темная multi-provider среда для chat, image и video.\n\n"
+        f"<b>Провайдеры:</b> {html.escape(providers_text)}\n"
+        "<b>Типы:</b> CHAT / IMG / VIDEO\n"
+        f"<b>Роль:</b> {html.escape(current_role)}\n\n"
+        "<b>Быстрый старт</b>\n"
+        "1. Нажми <b>«Выбрать роль»</b>\n"
+        "2. Нажми <b>«Выбрать модель»</b>\n"
+        "3. Пиши сообщение или открой <b>Web UI</b>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=start_shortcuts_keyboard(),
+    )
+    await update.message.reply_text(
+        "Подсказки: <code>сделай продающий текст</code>, <code>найди причину поломки</code>, <code>напиши код</code>",
         parse_mode=ParseMode.HTML,
         reply_markup=menu_keyboard(),
     )
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
-        "<b>\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435</b>\n"
-        "\u0418\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0439 \u043a\u043d\u043e\u043f\u043a\u0438.\n"
-        "\u2022 \u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0440\u043e\u043b\u044c \u2014 \u0437\u0430\u0434\u0430\u0451\u0442 \u0441\u0442\u0440\u043e\u0433\u0443\u044e \u0441\u043f\u0435\u0446\u0438\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044e \u043e\u0442\u0432\u0435\u0442\u0430\n"
-        "\u2022 \u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c \u2014 \u0432\u044b\u0431\u043e\u0440 \u043c\u043e\u0434\u0435\u043b\u0438\n"
-        "\u2022 \u041f\u0440\u043e\u0444\u0438\u043b\u044c \u2014 \u0438\u0441\u0442\u043e\u0440\u0438\u044f \u0438 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0430\n"
-        "\u2022 \u041b\u0438\u043c\u0438\u0442\u044b \u2014 \u043e\u0441\u0442\u0430\u0442\u043a\u0438 \u043f\u043e \u043c\u043e\u0434\u0435\u043b\u044f\u043c\n"
-        "\u2022 \u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433 \u2014 \u0441\u0431\u0440\u043e\u0441 \u0438\u0441\u0442\u043e\u0440\u0438\u0438",
+        "<b>Управление</b>\n"
+        "• <b>🎭 Выбрать роль</b> — задаёт специализацию ответа\n"
+        "• <b>🧠 Выбрать модель</b> — выбирает конкретную модель\n"
+        "• <b>📊 Профиль</b> — показывает статистику использования\n"
+        "• <b>⏱️ Лимиты</b> — показывает оценку остатка по лимитам\n"
+        "• <b>🧹 Очистить диалог</b> — сбрасывает историю\n"
+        "• <b>🌐 Web UI</b> — тёмный интерфейс с пузырями и подсветкой кода\n\n"
+        "<b>Формат ответов</b>\n"
+        "Код отображается в блоках, важные мысли выделяются, под каждым ответом виден провайдер и модель.",
         parse_mode=ParseMode.HTML,
-        reply_markup=menu_keyboard(),
+        reply_markup=start_shortcuts_keyboard(),
     )
 async def refresh_models(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await refresh_all_cmd(update, context, notify_only=False)
@@ -1546,6 +1738,39 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if data == "noop":
         return
 
+    if data == "open_roles":
+        await query.message.reply_text("Открыл выбор ролей.", reply_markup=menu_keyboard())
+        await show_roles_picker(query.message, context, page=0)
+        return
+
+    if data == "open_models":
+        await query.message.reply_text("Открыл выбор моделей.", reply_markup=menu_keyboard())
+        await show_models(query.message, context, page=0)
+        return
+
+    if data == "quick_profile":
+        state = ensure_state(context)
+        catalog_by_key: dict[str, ModelEntry] = context.bot_data.get("catalog_by_key", {})
+        text = format_profile(state, catalog_by_key)
+        chunks = split_for_telegram(text)
+        for i, part in enumerate(chunks):
+            if i == len(chunks) - 1:
+                await query.message.reply_text(part, parse_mode=ParseMode.HTML, reply_markup=menu_keyboard())
+            else:
+                await query.message.reply_text(part, parse_mode=ParseMode.HTML)
+        return
+
+    if data == "quick_limits":
+        state = ensure_state(context)
+        text = format_limits(state, context)
+        chunks = split_for_telegram(text)
+        for i, part in enumerate(chunks):
+            if i == len(chunks) - 1:
+                await query.message.reply_text(part, parse_mode=ParseMode.HTML, reply_markup=menu_keyboard())
+            else:
+                await query.message.reply_text(part, parse_mode=ParseMode.HTML)
+        return
+
     if data.startswith("p:"):
         page = int(data.split(":", 1)[1])
         await query.edit_message_reply_markup(reply_markup=models_keyboard(filtered, page, model_type, group_filter))
@@ -1765,6 +1990,74 @@ async def legnext_wait_result(api_key: str, task_id: str, timeout_sec: int = 180
         await asyncio.sleep(2.5)
 
 
+async def execute_chat_turn(
+    bot_data: dict[str, Any],
+    state: dict[str, Any],
+    user_text: str,
+) -> tuple[ProviderResult | None, str | None, str | None, ModelEntry | None]:
+    catalog: list[ModelEntry] = bot_data.get("models_catalog", [])
+    catalog_by_key: dict[str, ModelEntry] = bot_data.get("catalog_by_key", {})
+    selected_key = state.get("selected_model_key")
+    entry = catalog_by_key.get(selected_key) if selected_key else None
+    if not entry or entry.model_type != MODEL_TYPE_CHAT:
+        return None, None, "Сначала выбери чат-модель.", entry
+
+    history = state["history"]
+    providers = entry.providers or [entry.provider_id]
+    last_warning_local: str | None = None
+
+    for provider_id in providers:
+        client = bot_data["providers"].get(provider_id)
+        if not client:
+            continue
+        models = bot_data.get(current_models_key(provider_id), [])
+        if entry.model_id not in models:
+            continue
+        attempt = await try_with_fallbacks(
+            client,
+            provider_id,
+            entry.model_id,
+            history,
+            models,
+            allow_model_fallback=False,
+        )
+        if attempt.answer:
+            if answer_looks_broken(user_text, attempt.answer):
+                for alt_entry in preferred_fallback_chat_entries(catalog, state.get("selected_model_key")):
+                    alt_providers = alt_entry.providers or [alt_entry.provider_id]
+                    for alt_provider_id in alt_providers:
+                        alt_client = bot_data["providers"].get(alt_provider_id)
+                        if not alt_client:
+                            continue
+                        alt_models = bot_data.get(current_models_key(alt_provider_id), [])
+                        if alt_entry.model_id not in alt_models:
+                            continue
+                        try:
+                            alt_answer, alt_usage = await alt_client.chat_with_usage(alt_entry.model_id, history)
+                            if answer_looks_broken(user_text, alt_answer):
+                                continue
+                            state["selected_model_key"] = alt_entry.key
+                            return (
+                                ProviderResult(
+                                    alt_entry.model_id,
+                                    alt_answer,
+                                    "Бот отбросил некорректный ответ и автоматически переключил запрос на другую модель.",
+                                    alt_usage,
+                                ),
+                                alt_provider_id,
+                                last_warning_local,
+                                alt_entry,
+                            )
+                        except Exception:
+                            continue
+                last_warning_local = "Модель вернула некорректный ответ, попробуй другую модель."
+                continue
+            return attempt, provider_id, last_warning_local, entry
+        if attempt.warning:
+            last_warning_local = attempt.warning
+    return None, None, last_warning_local, entry
+
+
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.message.text or "").strip()
     await refresh_all_cmd(update, context, notify_only=True)
@@ -1813,64 +2106,14 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
             state["history"] = history
 
         await update.message.chat.send_action("typing")
-        providers = entry.providers or [entry.provider_id]
-
-        async def run_chat() -> tuple[ProviderResult | None, str | None, str | None]:
-            last_warning_local: str | None = None
-            catalog = context.bot_data.get("models_catalog", [])
-            for provider_id in providers:
-                client = context.bot_data["providers"].get(provider_id)
-                if not client:
-                    continue
-                models = context.bot_data.get(current_models_key(provider_id), [])
-                if entry.model_id not in models:
-                    continue
-                attempt = await try_with_fallbacks(
-                    client,
-                    provider_id,
-                    entry.model_id,
-                    history,
-                    models,
-                    allow_model_fallback=False,
-                )
-                if attempt.answer:
-                    if answer_looks_broken(text, attempt.answer):
-                        for alt_entry in preferred_fallback_chat_entries(catalog, state.get("selected_model_key")):
-                            alt_providers = alt_entry.providers or [alt_entry.provider_id]
-                            for alt_provider_id in alt_providers:
-                                alt_client = context.bot_data["providers"].get(alt_provider_id)
-                                if not alt_client:
-                                    continue
-                                alt_models = context.bot_data.get(current_models_key(alt_provider_id), [])
-                                if alt_entry.model_id not in alt_models:
-                                    continue
-                                try:
-                                    alt_answer, alt_usage = await alt_client.chat_with_usage(alt_entry.model_id, history)
-                                    if answer_looks_broken(text, alt_answer):
-                                        continue
-                                    state["selected_model_key"] = alt_entry.key
-                                    return (
-                                        ProviderResult(
-                                            alt_entry.model_id,
-                                            alt_answer,
-                                            "Бот отбросил некорректный ответ и автоматически переключил запрос на другую модель.",
-                                            alt_usage,
-                                        ),
-                                        alt_provider_id,
-                                        last_warning_local,
-                                    )
-                                except Exception:
-                                    continue
-                        last_warning_local = "Модель вернула некорректный ответ, попробуй другую модель."
-                        continue
-                    return attempt, provider_id, last_warning_local
-                if attempt.warning:
-                    last_warning_local = attempt.warning
-            return None, None, last_warning_local
-
+        status_msg, stop_event, progress_task = await start_progress_message(update.message)
+        started_at = time.perf_counter()
         semaphore: asyncio.Semaphore = context.bot_data["request_semaphore"]
-        async with semaphore:
-            result, used_provider, warning = await run_chat()
+        try:
+            async with semaphore:
+                result, used_provider, warning, actual_entry = await execute_chat_turn(context.bot_data, state, text)
+        finally:
+            await finish_progress_message(status_msg, stop_event, progress_task, ok=True)
 
         if not result or not result.answer:
             await update.message.reply_text(
@@ -1878,17 +2121,27 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 reply_markup=menu_keyboard(),
             )
             return
+
         answer = result.answer
-        update_usage_stats(state, used_provider, entry.model_id, result.usage, text, answer)
+        elapsed_sec = time.perf_counter() - started_at
+        usage_provider = used_provider or entry.provider_id
+        usage_model = actual_entry.model_id if actual_entry else (result.model_used or entry.model_id)
+        update_usage_stats(state, usage_provider, usage_model, result.usage, text, answer)
+
         if warning:
             await update.message.reply_text(warning, reply_markup=menu_keyboard())
+        if result.warning:
+            await update.message.reply_text(result.warning, reply_markup=menu_keyboard())
 
-        chunks = split_for_telegram(answer)
-        for i, part in enumerate(chunks):
-            if i == len(chunks) - 1:
-                await update.message.reply_text(part, reply_markup=menu_keyboard())
-            else:
-                await update.message.reply_text(part)
+        await reply_answer(
+            update.message,
+            answer,
+            usage_provider,
+            usage_model,
+            usage=result.usage,
+            elapsed_sec=elapsed_sec,
+            reply_markup=menu_keyboard(),
+        )
         return
 
     if entry.model_type == MODEL_TYPE_IMAGE:
@@ -1948,6 +2201,521 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
     err = context.error
     if update and isinstance(update, Update) and update.effective_message:
         await update.effective_message.reply_text(f"?????????? ?????? ????: {err}")
+
+
+def build_web_catalog(bot_data: dict[str, Any]) -> list[dict[str, str]]:
+    catalog: list[ModelEntry] = bot_data.get("models_catalog", [])
+    items: list[dict[str, str]] = []
+    for entry in catalog:
+        items.append(
+            {
+                "key": entry.key,
+                "providerId": entry.provider_id,
+                "providerTitle": provider_title(entry.provider_id),
+                "modelId": entry.model_id,
+                "type": entry.model_type,
+                "label": model_entry_label(entry),
+            }
+        )
+    return items
+
+
+def build_web_config(bot_data: dict[str, Any]) -> dict[str, Any]:
+    catalog: list[ModelEntry] = bot_data.get("models_catalog", [])
+    preferred_key = preferred_chat_model_key(catalog)
+    return {
+        "siteName": SITE_NAME,
+        "siteUrl": SITE_URL,
+        "defaultRoleId": "general",
+        "defaultModelKey": preferred_key,
+        "roles": [{"id": role.role_id, "title": role.title} for role in ROLE_SPECS],
+        "models": build_web_catalog(bot_data),
+        "quickReplies": [
+            "Напиши продающее описание услуги",
+            "Разбери ошибку в коде",
+            "Составь план ремонта",
+            "Сделай короткий оффер для Avito",
+        ],
+    }
+
+
+async def web_chat_response(payload: dict[str, Any]) -> dict[str, Any]:
+    bot_data = WEB_RUNTIME["bot_data"]
+    user_text = str(payload.get("message") or "").strip()
+    if not user_text:
+        return {"ok": False, "error": "Пустое сообщение."}
+
+    catalog: list[ModelEntry] = bot_data.get("models_catalog", [])
+    preferred_key = preferred_chat_model_key(catalog)
+    role_id = str(payload.get("roleId") or "general")
+    if role_id not in ROLE_MAP:
+        role_id = "general"
+
+    history = initial_history(role_id)
+    incoming_history = payload.get("history") or []
+    if isinstance(incoming_history, list):
+        for item in incoming_history[-20:]:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("role") or "").strip().lower()
+            content = str(item.get("content") or "").strip()
+            if role in {"user", "assistant"} and content:
+                history.append({"role": role, "content": content})
+
+    state = {
+        "selected_model_key": str(payload.get("selectedModelKey") or preferred_key or ""),
+        "selected_role_id": role_id,
+        "history": history,
+    }
+    state["history"].append({"role": "user", "content": user_text})
+    if len(state["history"]) > MAX_HISTORY_MESSAGES:
+        state["history"] = [state["history"][0]] + state["history"][-(MAX_HISTORY_MESSAGES - 1) :]
+
+    started_at = time.perf_counter()
+    result, used_provider, warning, actual_entry = await execute_chat_turn(bot_data, state, user_text)
+    if not result or not result.answer:
+        return {"ok": False, "error": warning or "Ответ не получен."}
+
+    answer = result.answer
+    elapsed_sec = time.perf_counter() - started_at
+    state["history"].append({"role": "assistant", "content": answer})
+    resolved_entry = actual_entry or bot_data.get("catalog_by_key", {}).get(state.get("selected_model_key"))
+    provider_id = used_provider or (resolved_entry.provider_id if resolved_entry else "")
+    model_id = result.model_used or (resolved_entry.model_id if resolved_entry else "")
+    return {
+        "ok": True,
+        "answer": answer,
+        "warning": warning,
+        "providerId": provider_id,
+        "providerTitle": provider_title(provider_id) if provider_id else "AI",
+        "modelId": model_id,
+        "usage": result.usage or {},
+        "elapsedSec": elapsed_sec,
+        "metadataLines": format_metadata_lines(provider_id, model_id, result.usage, elapsed_sec),
+        "selectedModelKey": state.get("selected_model_key"),
+        "roleId": role_id,
+        "roleTitle": role_title(role_id),
+        "history": state["history"][1:],
+    }
+
+
+def web_ui_html() -> str:
+    return """<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>AI Bot UI</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+  <style>
+    :root {
+      --bg: #0b1220;
+      --bg-soft: #111a2b;
+      --panel: rgba(15, 23, 42, 0.84);
+      --panel-border: rgba(96, 165, 250, 0.18);
+      --text: #e6eefc;
+      --muted: #8fa3c7;
+      --accent: #3b82f6;
+      --accent-2: #60a5fa;
+      --user: linear-gradient(135deg, #2563eb, #1d4ed8);
+      --bot: linear-gradient(180deg, rgba(20,31,56,0.96), rgba(13,20,38,0.96));
+      --shadow: 0 20px 45px rgba(2, 8, 23, 0.45);
+      --radius: 22px;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Space Grotesk", sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(59,130,246,0.18), transparent 30%),
+        radial-gradient(circle at top right, rgba(96,165,250,0.12), transparent 25%),
+        linear-gradient(180deg, #08101d, #0b1220 55%, #0a1424);
+      min-height: 100vh;
+    }
+    .shell {
+      width: min(1180px, calc(100vw - 32px));
+      margin: 24px auto;
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      gap: 18px;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--panel-border);
+      border-radius: 28px;
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(14px);
+    }
+    .sidebar { padding: 22px; }
+    .brand {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 18px;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 28px;
+      letter-spacing: -0.04em;
+    }
+    .badge {
+      font-size: 12px;
+      color: #dbeafe;
+      border: 1px solid rgba(96,165,250,0.3);
+      background: rgba(59,130,246,0.16);
+      border-radius: 999px;
+      padding: 8px 10px;
+    }
+    .sub {
+      color: var(--muted);
+      margin: 0 0 18px;
+      line-height: 1.5;
+    }
+    .field { margin-bottom: 14px; }
+    .field label {
+      display: block;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    select, textarea {
+      width: 100%;
+      border: 1px solid rgba(148, 163, 184, 0.2);
+      background: rgba(15, 23, 42, 0.74);
+      color: var(--text);
+      border-radius: 16px;
+      padding: 14px 16px;
+      font: inherit;
+      outline: none;
+    }
+    textarea {
+      min-height: 84px;
+      resize: vertical;
+    }
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .chip {
+      border: 1px solid rgba(96,165,250,0.24);
+      background: rgba(30, 41, 59, 0.76);
+      color: var(--text);
+      padding: 10px 12px;
+      border-radius: 999px;
+      cursor: pointer;
+      font: inherit;
+    }
+    .chat-wrap {
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      min-height: calc(100vh - 48px);
+    }
+    .chat-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 22px 24px 14px;
+      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+    }
+    .chat-head h2 {
+      margin: 0;
+      font-size: 22px;
+      letter-spacing: -0.03em;
+    }
+    .chat-log {
+      padding: 24px;
+      overflow: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .bubble {
+      max-width: min(860px, 88%);
+      padding: 16px 18px;
+      border-radius: var(--radius);
+      box-shadow: 0 12px 32px rgba(2,8,23,0.22);
+      position: relative;
+      line-height: 1.6;
+      white-space: normal;
+    }
+    .bubble.user {
+      align-self: flex-end;
+      background: var(--user);
+      border-bottom-right-radius: 10px;
+    }
+    .bubble.bot {
+      align-self: flex-start;
+      background: var(--bot);
+      border: 1px solid rgba(96,165,250,0.12);
+      border-bottom-left-radius: 10px;
+    }
+    .bubble-meta {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      margin-bottom: 10px;
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .provider-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border-radius: 999px;
+      padding: 6px 10px;
+      background: rgba(59,130,246,0.14);
+      color: #cfe2ff;
+      border: 1px solid rgba(96,165,250,0.22);
+    }
+    .bubble pre {
+      overflow: auto;
+      border-radius: 16px;
+      padding: 14px;
+      background: #08101b;
+      border: 1px solid rgba(96,165,250,0.12);
+      font-family: "JetBrains Mono", monospace;
+    }
+    .bubble code {
+      font-family: "JetBrains Mono", monospace;
+    }
+    .composer {
+      padding: 18px 24px 24px;
+      border-top: 1px solid rgba(148, 163, 184, 0.1);
+      display: grid;
+      gap: 10px;
+    }
+    .composer-row {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 12px;
+      align-items: end;
+    }
+    .send {
+      border: none;
+      border-radius: 18px;
+      padding: 14px 18px;
+      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+      color: white;
+      font: inherit;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 10px 25px rgba(37, 99, 235, 0.3);
+    }
+    .status {
+      color: var(--muted);
+      font-size: 13px;
+      min-height: 18px;
+    }
+    @media (max-width: 980px) {
+      .shell {
+        grid-template-columns: 1fr;
+      }
+      .chat-wrap {
+        min-height: auto;
+      }
+      .bubble {
+        max-width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="panel sidebar">
+      <div class="brand">
+        <h1>AI Bot</h1>
+        <div class="badge">Dark UI</div>
+      </div>
+      <p class="sub">Профессиональный интерфейс для multi-provider чата: роли, модели, индикатор API и аккуратный рендер ответов.</p>
+      <div class="field">
+        <label for="roleSelect">Роль</label>
+        <select id="roleSelect"></select>
+      </div>
+      <div class="field">
+        <label for="modelSelect">Модель</label>
+        <select id="modelSelect"></select>
+      </div>
+      <div class="field">
+        <label>Quick Replies</label>
+        <div class="chips" id="quickReplies"></div>
+      </div>
+    </aside>
+    <main class="panel chat-wrap">
+      <div class="chat-head">
+        <div>
+          <h2>Панель общения</h2>
+          <div class="sub" style="margin:6px 0 0">Провайдер и модель видны на каждом ответе.</div>
+        </div>
+        <div class="provider-pill" id="sessionBadge">⚡ Готов</div>
+      </div>
+      <div class="chat-log" id="chatLog"></div>
+      <div class="composer">
+        <div class="status" id="status">Готов к работе.</div>
+        <div class="composer-row">
+          <textarea id="promptInput" placeholder="Напиши задачу: код, продажа, диагностика, план, объявление..."></textarea>
+          <button class="send" id="sendBtn">Отправить</button>
+        </div>
+      </div>
+    </main>
+  </div>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
+  <script>
+    const state = { config: null, history: JSON.parse(localStorage.getItem('webHistory') || '[]') };
+    const roleSelect = document.getElementById('roleSelect');
+    const modelSelect = document.getElementById('modelSelect');
+    const promptInput = document.getElementById('promptInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const quickReplies = document.getElementById('quickReplies');
+    const chatLog = document.getElementById('chatLog');
+    const statusEl = document.getElementById('status');
+    const sessionBadge = document.getElementById('sessionBadge');
+
+    marked.setOptions({
+      breaks: true,
+      highlight(code, lang) {
+        if (lang && hljs.getLanguage(lang)) {
+          return hljs.highlight(code, { language: lang }).value;
+        }
+        return hljs.highlightAuto(code).value;
+      }
+    });
+
+    function saveHistory() {
+      localStorage.setItem('webHistory', JSON.stringify(state.history.slice(-20)));
+    }
+
+    function bubbleHtml(item) {
+      const cls = item.role === 'user' ? 'user' : 'bot';
+      const label = item.role === 'user' ? 'Ты' : 'Бот';
+      const meta = item.providerTitle ? `<span class="provider-pill">⚡ ${item.providerTitle} · ${item.modelId || ''}</span>` : '';
+      const body = item.role === 'assistant' ? marked.parse(item.content) : item.content.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');
+      return `<article class="bubble ${cls}"><div class="bubble-meta"><strong>${label}</strong>${meta}</div><div>${body}</div></article>`;
+    }
+
+    function renderHistory() {
+      chatLog.innerHTML = state.history.map(bubbleHtml).join('');
+      chatLog.querySelectorAll('pre code').forEach(block => hljs.highlightElement(block));
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function fillConfig(config) {
+      state.config = config;
+      roleSelect.innerHTML = config.roles.map(role => `<option value="${role.id}">${role.title}</option>`).join('');
+      modelSelect.innerHTML = config.models
+        .filter(model => model.type === 'chat')
+        .map(model => `<option value="${model.key}">${model.label}</option>`)
+        .join('');
+      roleSelect.value = config.defaultRoleId || 'general';
+      if (config.defaultModelKey) modelSelect.value = config.defaultModelKey;
+      quickReplies.innerHTML = '';
+      config.quickReplies.forEach(text => {
+        const btn = document.createElement('button');
+        btn.className = 'chip';
+        btn.textContent = text;
+        btn.onclick = () => {
+          promptInput.value = text;
+          promptInput.focus();
+        };
+        quickReplies.appendChild(btn);
+      });
+      renderHistory();
+    }
+
+    async function boot() {
+      const res = await fetch('/api/config');
+      const config = await res.json();
+      fillConfig(config);
+      if (!state.history.length) {
+        state.history.push({
+          role: 'assistant',
+          content: '**Готов к работе.** Выбери роль и модель слева, затем отправь задачу.\\n\\nПоддерживаются код, списки, структурированные ответы и подсветка блоков кода.',
+          providerTitle: 'System',
+          modelId: 'UI'
+        });
+        saveHistory();
+        renderHistory();
+      }
+    }
+
+    async function sendMessage() {
+      const message = promptInput.value.trim();
+      if (!message) return;
+      const payload = {
+        message,
+        roleId: roleSelect.value,
+        selectedModelKey: modelSelect.value,
+        history: state.history.filter(item => item.role === 'user' || item.role === 'assistant').map(item => ({
+          role: item.role === 'assistant' ? 'assistant' : 'user',
+          content: item.content
+        }))
+      };
+      state.history.push({ role: 'user', content: message });
+      promptInput.value = '';
+      saveHistory();
+      renderHistory();
+      statusEl.textContent = 'Generating... [----------] 0%';
+      sendBtn.disabled = true;
+      let progress = 0;
+      const progressTimer = setInterval(() => {
+        progress = Math.min(progress + 13, 94);
+        const filled = Math.max(0, Math.min(10, Math.round(progress / 10)));
+        statusEl.textContent = `Generating... [${'#'.repeat(filled)}${'-'.repeat(10 - filled)}] ${progress}%`;
+      }, 700);
+      try {
+        const res = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        clearInterval(progressTimer);
+        if (!data.ok) throw new Error(data.error || 'Response error');
+        sessionBadge.textContent = `API ${data.providerTitle} | ${data.modelId}`;
+        const metadataBlock = data.metadataLines?.length
+          ? `
+
+\`\`\`text
+${data.metadataLines.join('\n')}
+\`\`\``
+          : '';
+        state.history.push({
+          role: 'assistant',
+          content: `${data.answer}${metadataBlock}`,
+          providerTitle: data.providerTitle,
+          modelId: data.modelId
+        });
+        statusEl.textContent = data.warning || `Done. [##########] 100% | ${data.providerTitle} / ${data.modelId}`;
+        saveHistory();
+        renderHistory();
+      } catch (err) {
+        clearInterval(progressTimer);
+        statusEl.textContent = `Error: ${err.message}`;
+        state.history.push({ role: 'assistant', content: `**Error:** ${err.message}`, providerTitle: 'System', modelId: 'ERR' });
+        saveHistory();
+        renderHistory();
+      } finally {
+        sendBtn.disabled = false;
+      }
+    }
+
+    sendBtn.addEventListener('click', sendMessage);
+    promptInput.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') sendMessage();
+    });
+
+    boot();
+  </script>
+</body>
+</html>"""
 
 
 def validate_env() -> tuple[str, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
@@ -2080,6 +2848,17 @@ def main() -> None:
     app.bot_data["request_limits"] = parse_limit_map(request_limits_env)
     app.bot_data["request_semaphore"] = asyncio.Semaphore(MAX_CONCURRENT_REQUESTS)
 
+    for provider_id in sorted(app.bot_data.get("chat_providers", set())):
+        app.bot_data[current_models_key(provider_id)] = list(STATIC_CHAT_MODELS.get(provider_id, []))
+        app.bot_data[f"unavailable:{provider_id}"] = []
+
+    class _BotDataContext:
+        def __init__(self, bot_data: dict[str, Any]):
+            self.bot_data = bot_data
+
+    build_model_catalog(_BotDataContext(app.bot_data))
+    WEB_RUNTIME["bot_data"] = app.bot_data
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CallbackQueryHandler(callback_router))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, on_text))
@@ -2087,12 +2866,64 @@ def main() -> None:
 
     port = int(os.getenv("PORT", "0") or "0")
     if port > 0:
+        web_loop = asyncio.new_event_loop()
+
+        def run_web_loop() -> None:
+            asyncio.set_event_loop(web_loop)
+            web_loop.run_forever()
+
+        threading.Thread(target=run_web_loop, daemon=True).start()
+
         class HealthHandler(BaseHTTPRequestHandler):
             def do_GET(self):
-                self.send_response(200)
-                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                if self.path in {"/", "/index.html"}:
+                    body = web_ui_html().encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/html; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
+                    return
+                if self.path == "/api/config":
+                    payload = json.dumps(build_web_config(WEB_RUNTIME["bot_data"]), ensure_ascii=False).encode("utf-8")
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                    return
+                if self.path == "/health":
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/plain; charset=utf-8")
+                    self.end_headers()
+                    self.wfile.write(b"ok")
+                    return
+                self.send_response(404)
                 self.end_headers()
-                self.wfile.write(b"ok")
+
+            def do_POST(self):
+                if self.path != "/api/chat":
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                length = int(self.headers.get("Content-Length", "0") or "0")
+                raw = self.rfile.read(length) if length > 0 else b"{}"
+                try:
+                    payload = json.loads(raw.decode("utf-8"))
+                except Exception:
+                    payload = {}
+                try:
+                    result = asyncio.run_coroutine_threadsafe(web_chat_response(payload), web_loop).result(timeout=180)
+                    status = 200 if result.get("ok") else 400
+                except Exception as e:
+                    result = {"ok": False, "error": str(e)}
+                    status = 500
+                body = json.dumps(result, ensure_ascii=False).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
 
             def log_message(self, format, *args):
                 return
