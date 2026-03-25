@@ -49,6 +49,7 @@ BTN_CLEAR = "\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u0434\u0438\u0430
 BTN_HELP = "\u041f\u043e\u043c\u043e\u0449\u044c"
 BTN_PROFILE = "\u041f\u0440\u043e\u0444\u0438\u043b\u044c"
 BTN_LIMITS = "\u041b\u0438\u043c\u0438\u0442\u044b"
+BTN_ROLE = "\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0440\u043e\u043b\u044c"
 
 PROVIDER_OPENROUTER = "openrouter"
 PROVIDER_GROQ = "groq"
@@ -796,8 +797,8 @@ def menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             [BTN_PICK_MODEL, BTN_CLEAR],
-            [BTN_PROFILE, BTN_LIMITS],
-            [BTN_HELP],
+            [BTN_ROLE, BTN_PROFILE],
+            [BTN_LIMITS, BTN_HELP],
         ],
         resize_keyboard=True,
     )
@@ -1234,8 +1235,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         f"\u041f\u0440\u043e\u0432\u0430\u0439\u0434\u0435\u0440\u044b: {providers_text}\n"
         "\u0422\u0438\u043f\u044b: CHAT / IMG / VIDEO\n"
         f"\u0420\u043e\u043b\u044c: {current_role}\n"
-        "1) \u041d\u0430\u0436\u043c\u0438 \u00ab\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c\u00bb\n"
-        "2) \u041f\u0438\u0448\u0438 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
+        "1) \u041d\u0430\u0436\u043c\u0438 \u00ab\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0440\u043e\u043b\u044c\u00bb\n"
+        "2) \u041d\u0430\u0436\u043c\u0438 \u00ab\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c\u00bb\n"
+        "3) \u041f\u0438\u0448\u0438 \u0441\u043e\u043e\u0431\u0449\u0435\u043d\u0438\u044f",
         parse_mode=ParseMode.HTML,
         reply_markup=menu_keyboard(),
     )
@@ -1243,6 +1245,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "<b>\u0423\u043f\u0440\u0430\u0432\u043b\u0435\u043d\u0438\u0435</b>\n"
         "\u0418\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u0439 \u043a\u043d\u043e\u043f\u043a\u0438.\n"
+        "\u2022 \u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0440\u043e\u043b\u044c \u2014 \u0437\u0430\u0434\u0430\u0451\u0442 \u0441\u0442\u0440\u043e\u0433\u0443\u044e \u0441\u043f\u0435\u0446\u0438\u0430\u043b\u0438\u0437\u0430\u0446\u0438\u044e \u043e\u0442\u0432\u0435\u0442\u0430\n"
         "\u2022 \u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c \u2014 \u0432\u044b\u0431\u043e\u0440 \u043c\u043e\u0434\u0435\u043b\u0438\n"
         "\u2022 \u041f\u0440\u043e\u0444\u0438\u043b\u044c \u2014 \u0438\u0441\u0442\u043e\u0440\u0438\u044f \u0438 \u0441\u0442\u0430\u0442\u0438\u0441\u0442\u0438\u043a\u0430\n"
         "\u2022 \u041b\u0438\u043c\u0438\u0442\u044b \u2014 \u043e\u0441\u0442\u0430\u0442\u043a\u0438 \u043f\u043e \u043c\u043e\u0434\u0435\u043b\u044f\u043c\n"
@@ -1667,6 +1670,9 @@ async def legnext_wait_result(api_key: str, task_id: str, timeout_sec: int = 180
 async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     text = (update.message.text or "").strip()
     await refresh_all_cmd(update, context, notify_only=True)
+    if text == BTN_ROLE:
+        await show_roles_picker(update.message, context, page=0)
+        return
     if text == BTN_PICK_MODEL:
         await show_models(update.message, context, page=0)
         return
