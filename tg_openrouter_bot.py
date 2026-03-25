@@ -150,6 +150,35 @@ def estimate_tokens(prompt_text: str, answer_text: str) -> int:
     return max(1, (len(prompt_text) + len(answer_text)) // 4)
 
 
+def has_cyrillic(text: str) -> bool:
+    return any("\u0400" <= ch <= "\u04ff" for ch in text)
+
+
+def has_arabic(text: str) -> bool:
+    return any("\u0600" <= ch <= "\u06ff" for ch in text)
+
+
+def answer_looks_broken(user_text: str, answer_text: str) -> bool:
+    if not answer_text or len(answer_text.strip()) < 8:
+        return True
+    if has_cyrillic(user_text) and has_arabic(answer_text):
+        return True
+    upper_words = answer_text.split()
+    if upper_words:
+        repeated = 0
+        prev = None
+        for word in upper_words:
+            token = word.strip(".,!?:;()[]{}\"'").lower()
+            if token and token == prev:
+                repeated += 1
+            prev = token
+        if repeated >= 8:
+            return True
+    if answer_text.count("ВЫБОР") >= 6 or answer_text.count("ТРАНСТРОЙТЕЛЬ") >= 4:
+        return True
+    return False
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -357,10 +386,10 @@ ROLE_SPECS: list[RoleSpec] = [
     RoleSpec("marketing", "Маркетолог", "You are a marketing strategist. Build offers, positioning, channels, and measurable campaigns."),
     RoleSpec("copywriter", "Копирайтер", "You are a conversion copywriter. Write clear, persuasive texts with strong structure and CTA."),
     RoleSpec("sales", "Продажник", "You are a sales advisor. Qualify needs, handle objections, and propose next best sales actions."),
-    RoleSpec("avitolog", "Авитолог", "You are an Avito optimization expert. Improve listing titles, photos, descriptions, pricing, category choice, promotion strategy, customer replies, and conversion scripts. Give actionable recommendations in Avito-specific terms."),
-    RoleSpec("repair_master", "Ремонт техники", "You are a universal device repair specialist. Diagnose issues in phones, laptops, PCs, бытовая техника, TVs, routers, and small electronics. Give safe step-by-step diagnostics, likely causes, required tools, risks, and when repair should be escalated to a service center."),
-    RoleSpec("gardener", "Садовод", "You are an experienced gardener. Help with soil, watering, fertilizing, pests, pruning, planting schedules, greenhouses, seedlings, fruit trees, and seasonal care. Give practical advice adjusted to climate and season."),
-    RoleSpec("mechanic", "Механик", "You are a practical mechanic. Diagnose car, motorcycle, scooter, and machinery issues, explain likely faults, repair sequence, tools, safety checks, and parts that should be inspected or replaced."),
+    RoleSpec("avitolog", "Авитолог", "You are an Avito lead-generation and conversion expert. Answer only in Russian. Treat the user as a seller or intermediary on Avito. Give practical recommendations only for Avito: title, category, geo, USP, trust, offer, funnel, scripts, objections, lead qualification, and promotion. Default reply format: 1) Короткий вывод 2) Что исправить 3) Готовый текст для Avito 4) Следующий шаг. Never generate nonsense examples or placeholder spam."),
+    RoleSpec("repair_master", "Ремонт техники", "You are a universal repair technician. Answer only in Russian. Diagnose phones, laptops, PCs, home appliances, TVs, routers, and electronics. Default reply format: 1) Возможные причины 2) Что проверить по шагам 3) Что нужно для ремонта 4) Когда лучше не лезть и отдать в сервис. Prioritize safety and clear diagnostics."),
+    RoleSpec("gardener", "Садовод", "You are an experienced gardener. Answer only in Russian. Help with soil, watering, fertilizers, pests, pruning, planting schedules, seedlings, fruit trees, greenhouse work, and seasonal care. Default reply format: 1) Диагноз ситуации 2) Что делать сейчас 3) Что делать дальше 4) Чего избегать."),
+    RoleSpec("mechanic", "Механик", "You are a practical mechanic. Answer only in Russian. Diagnose cars, motorcycles, scooters, and equipment. Default reply format: 1) Вероятные причины 2) Проверка по шагам 3) Ремонт/замена 4) Риски и безопасность. Avoid vague generic advice."),
     RoleSpec("recruiter", "Рекрутер", "You are a recruiter and career advisor. Optimize resumes, vacancies, and interview strategy."),
     RoleSpec("law_basic", "Юрист-черновик", "You are a legal drafting assistant (not a lawyer). Create safe draft texts and highlight legal risks."),
     RoleSpec("finance_basic", "Финансы", "You are a personal finance analyst. Build budgets, scenarios, and risk-aware plans."),
@@ -1735,6 +1764,28 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                     allow_model_fallback=False,
                 )
                 if attempt.answer:
+                    if answer_looks_broken(text, attempt.answer):
+                        for alt_model in models:
+                            if alt_model == entry.model_id:
+                                continue
+                            try:
+                                alt_answer, alt_usage = await client.chat_with_usage(alt_model, history)
+                                if answer_looks_broken(text, alt_answer):
+                                    continue
+                                return (
+                                    ProviderResult(
+                                        alt_model,
+                                        alt_answer,
+                                        "Ответ исходной модели выглядел некорректно, бот автоматически переключил запрос на другую модель.",
+                                        alt_usage,
+                                    ),
+                                    provider_id,
+                                    last_warning_local,
+                                )
+                            except Exception:
+                                continue
+                        last_warning_local = "Модель вернула некорректный ответ, попробуй другую модель."
+                        continue
                     return attempt, provider_id, last_warning_local
                 if attempt.warning:
                     last_warning_local = attempt.warning
