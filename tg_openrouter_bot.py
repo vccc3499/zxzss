@@ -44,12 +44,12 @@ MAX_GLOBAL_AGENTS = 50
 SYSTEM_PROMPT = "You are a helpful assistant. Keep answers concise and clear."
 TELEGRAM_MESSAGE_CHUNK = 3900
 
-BTN_PICK_MODEL = "\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c"
-BTN_CLEAR = "\u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433"
-BTN_HELP = "\u041f\u043e\u043c\u043e\u0449\u044c"
-BTN_PROFILE = "\u041f\u0440\u043e\u0444\u0438\u043b\u044c"
-BTN_LIMITS = "\u041b\u0438\u043c\u0438\u0442\u044b"
-BTN_ROLE = "\u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0440\u043e\u043b\u044c"
+BTN_PICK_MODEL = "\U0001f9e0 \u0412\u044b\u0431\u0440\u0430\u0442\u044c \u043c\u043e\u0434\u0435\u043b\u044c"
+BTN_CLEAR = "\U0001f9f9 \u041e\u0447\u0438\u0441\u0442\u0438\u0442\u044c \u0434\u0438\u0430\u043b\u043e\u0433"
+BTN_HELP = "\u2139\ufe0f \u041f\u043e\u043c\u043e\u0449\u044c"
+BTN_PROFILE = "\U0001f4ca \u041f\u0440\u043e\u0444\u0438\u043b\u044c"
+BTN_LIMITS = "\u23f1\ufe0f \u041b\u0438\u043c\u0438\u0442\u044b"
+BTN_ROLE = "\U0001f3ad \u0412\u044b\u0431\u0440\u0430\u0442\u044c \u0440\u043e\u043b\u044c"
 
 PROVIDER_OPENROUTER = "openrouter"
 PROVIDER_GROQ = "groq"
@@ -111,6 +111,21 @@ STATIC_CHAT_MODELS: dict[str, list[str]] = {
         "qwen3-coder",
     ],
 }
+
+PREFERRED_CHAT_MODELS = [
+    "llama-3.3-70b-versatile",
+    "arcee-ai/trinity-large-preview:free",
+    "gpt-5",
+    "claude",
+    "gemini",
+    "deepseek",
+    "qwen3-coder",
+    "CohereLabs/aya-expanse-32b",
+    "CohereLabs/c4ai-command-a-03-2025",
+    "meta-llama/llama-4-scout-17b-16e-instruct",
+    "groq/compound",
+    "groq/compound-mini",
+]
 
 def model_group(provider_id: str, model_id: str) -> str:
     m = model_id.lower()
@@ -1368,6 +1383,18 @@ def build_model_catalog(context: ContextTypes.DEFAULT_TYPE) -> list[ModelEntry]:
     return catalog
 
 
+def preferred_chat_model_key(catalog: list[ModelEntry]) -> str | None:
+    chat_entries = [entry for entry in catalog if entry.model_type == MODEL_TYPE_CHAT]
+    if not chat_entries:
+        return None
+    by_id = {entry.model_id: entry.key for entry in chat_entries}
+    for model_id in PREFERRED_CHAT_MODELS:
+        key = by_id.get(model_id)
+        if key:
+            return key
+    return chat_entries[0].key
+
+
 async def refresh_all_cmd(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1386,8 +1413,8 @@ async def refresh_all_cmd(
     if update.effective_user:
         ustate = ensure_state(context)
         if catalog and not ustate.get("selected_model_key"):
-            first_chat = next((entry for entry in catalog if entry.model_type == MODEL_TYPE_CHAT), None)
-            ustate["selected_model_key"] = (first_chat.key if first_chat else catalog[0].key)
+            preferred_key = preferred_chat_model_key(catalog)
+            ustate["selected_model_key"] = preferred_key or catalog[0].key
         if agents and not ustate.get("selected_agent_id"):
             ustate["selected_agent_id"] = agents[0].agent_id
 
@@ -1526,6 +1553,9 @@ async def callback_router(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             return
         state["selected_role_id"] = role_id
         state["history"] = initial_history(role_id)
+        preferred_key = preferred_chat_model_key(context.bot_data.get("models_catalog", []))
+        if preferred_key:
+            state["selected_model_key"] = preferred_key
         await query.edit_message_text(f"Роль выбрана: {role_title(role_id)}")
         await query.message.reply_text("Роль применена. Пиши сообщение.", reply_markup=menu_keyboard())
         return
