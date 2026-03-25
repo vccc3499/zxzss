@@ -342,6 +342,9 @@ def role_prompt(role_id: str | None) -> str:
     spec = ROLE_MAP.get(role_id)
     if not spec:
         return strict_prefix + SYSTEM_PROMPT
+    contract = role_output_contract(role_id)
+    if contract:
+        return strict_prefix + spec.system_prompt + " " + contract
     return strict_prefix + spec.system_prompt
 
 
@@ -352,6 +355,30 @@ def role_title(role_id: str | None) -> str:
     if not spec:
         return "Универсал"
     return spec.title
+
+
+def role_output_contract(role_id: str | None) -> str:
+    contracts = {
+        "avitolog": (
+            "Return the final answer in Russian with these exact sections and nothing extra: "
+            "1. Разбор 2. Готовый заголовок 3. Готовое описание 4. Скрипт ответа клиенту 5. CTA. "
+            "If data is missing, first give a short practical draft based on reasonable assumptions, then list up to 3 уточняющих вопроса."
+        ),
+        "mechanic": (
+            "Return the final answer in Russian with these exact sections and nothing extra: "
+            "1. Причины 2. Проверка 3. Ремонт 4. Риски. "
+            "Use step-by-step numbered checks where appropriate."
+        ),
+        "repair_master": (
+            "Return the final answer in Russian with these exact sections and nothing extra: "
+            "1. Возможные причины 2. Проверка 3. Что делать 4. Когда в сервис."
+        ),
+        "programmer": (
+            "Return the final answer in Russian with these exact sections when relevant: "
+            "1. Что сделать 2. Код или пример 3. Проверка 4. Подводные камни."
+        ),
+    }
+    return contracts.get(role_id or "", "")
 
 
 def initial_history(role_id: str | None = None) -> list[dict[str, str]]:
@@ -1395,6 +1422,18 @@ def preferred_chat_model_key(catalog: list[ModelEntry]) -> str | None:
     return chat_entries[0].key
 
 
+def preferred_fallback_chat_entries(
+    catalog: list[ModelEntry],
+    current_key: str | None,
+) -> list[ModelEntry]:
+    chat_entries = [entry for entry in catalog if entry.model_type == MODEL_TYPE_CHAT and entry.key != current_key]
+    rank = {model_id: idx for idx, model_id in enumerate(PREFERRED_CHAT_MODELS)}
+    return sorted(
+        chat_entries,
+        key=lambda entry: (rank.get(entry.model_id, 10_000), entry.model_id.lower()),
+    )
+
+
 async def refresh_all_cmd(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
@@ -1778,6 +1817,7 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
         async def run_chat() -> tuple[ProviderResult | None, str | None, str | None]:
             last_warning_local: str | None = None
+            catalog = context.bot_data.get("models_catalog", [])
             for provider_id in providers:
                 client = context.bot_data["providers"].get(provider_id)
                 if not client:
@@ -1795,25 +1835,32 @@ async def on_text(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
                 )
                 if attempt.answer:
                     if answer_looks_broken(text, attempt.answer):
-                        for alt_model in models:
-                            if alt_model == entry.model_id:
-                                continue
-                            try:
-                                alt_answer, alt_usage = await client.chat_with_usage(alt_model, history)
-                                if answer_looks_broken(text, alt_answer):
+                        for alt_entry in preferred_fallback_chat_entries(catalog, state.get("selected_model_key")):
+                            alt_providers = alt_entry.providers or [alt_entry.provider_id]
+                            for alt_provider_id in alt_providers:
+                                alt_client = context.bot_data["providers"].get(alt_provider_id)
+                                if not alt_client:
                                     continue
-                                return (
-                                    ProviderResult(
-                                        alt_model,
-                                        alt_answer,
-                                        "Ответ исходной модели выглядел некорректно, бот автоматически переключил запрос на другую модель.",
-                                        alt_usage,
-                                    ),
-                                    provider_id,
-                                    last_warning_local,
-                                )
-                            except Exception:
-                                continue
+                                alt_models = context.bot_data.get(current_models_key(alt_provider_id), [])
+                                if alt_entry.model_id not in alt_models:
+                                    continue
+                                try:
+                                    alt_answer, alt_usage = await alt_client.chat_with_usage(alt_entry.model_id, history)
+                                    if answer_looks_broken(text, alt_answer):
+                                        continue
+                                    state["selected_model_key"] = alt_entry.key
+                                    return (
+                                        ProviderResult(
+                                            alt_entry.model_id,
+                                            alt_answer,
+                                            "Бот отбросил некорректный ответ и автоматически переключил запрос на другую модель.",
+                                            alt_usage,
+                                        ),
+                                        alt_provider_id,
+                                        last_warning_local,
+                                    )
+                                except Exception:
+                                    continue
                         last_warning_local = "Модель вернула некорректный ответ, попробуй другую модель."
                         continue
                     return attempt, provider_id, last_warning_local
