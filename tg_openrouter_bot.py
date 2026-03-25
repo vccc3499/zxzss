@@ -2256,11 +2256,15 @@ def build_web_catalog(bot_data: dict[str, Any]) -> list[dict[str, str]]:
 def build_web_config(bot_data: dict[str, Any]) -> dict[str, Any]:
     catalog: list[ModelEntry] = bot_data.get("models_catalog", [])
     preferred_key = preferred_chat_model_key(catalog)
+    key_slot_active = max(1, int(os.getenv("KEY_SLOT_ACTIVE", "1") or "1"))
+    key_slots_total = max(key_slot_active, int(os.getenv("KEY_SLOTS_TOTAL", "20") or "20"))
     return {
         "siteName": SITE_NAME,
         "siteUrl": SITE_URL,
         "defaultRoleId": "general",
         "defaultModelKey": preferred_key,
+        "keySlotActive": key_slot_active,
+        "keySlotsTotal": key_slots_total,
         "roles": [{"id": role.role_id, "title": role.title} for role in ROLE_SPECS],
         "models": build_web_catalog(bot_data),
         "quickReplies": [
@@ -2338,192 +2342,356 @@ def web_ui_html() -> str:
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>AI Bot UI</title>
+  <title>AI Bot Cyber UI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/github-dark.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/base16/synth-midnight-terminal-dark.min.css">
   <style>
     :root {
-      --bg: #0b1220;
-      --bg-soft: #111a2b;
-      --panel: rgba(15, 23, 42, 0.84);
-      --panel-border: rgba(96, 165, 250, 0.18);
-      --text: #e6eefc;
-      --muted: #8fa3c7;
-      --accent: #3b82f6;
-      --accent-2: #60a5fa;
-      --user: linear-gradient(135deg, #2563eb, #1d4ed8);
-      --bot: linear-gradient(180deg, rgba(20,31,56,0.96), rgba(13,20,38,0.96));
-      --shadow: 0 20px 45px rgba(2, 8, 23, 0.45);
-      --radius: 22px;
+      --bg: #050505;
+      --bg-soft: rgba(10, 10, 14, 0.92);
+      --glass: rgba(20, 20, 20, 0.8);
+      --glass-2: rgba(8, 8, 8, 0.72);
+      --cyan: #00f2ff;
+      --pink: #ff00ff;
+      --text: #d8fbff;
+      --muted: #7fd9e0;
+      --line: rgba(0, 242, 255, 0.22);
+      --danger: #ff4fd8;
+      --radius: 20px;
+      --shadow-cyan: 0 0 15px rgba(0, 242, 255, 0.55);
+      --shadow-pink: 0 0 15px rgba(255, 0, 255, 0.45);
     }
     * { box-sizing: border-box; }
+    html, body { min-height: 100%; }
     body {
       margin: 0;
-      font-family: "Space Grotesk", sans-serif;
+      font-family: "JetBrains Mono", "Courier New", monospace;
       color: var(--text);
       background:
-        radial-gradient(circle at top left, rgba(59,130,246,0.18), transparent 30%),
-        radial-gradient(circle at top right, rgba(96,165,250,0.12), transparent 25%),
-        linear-gradient(180deg, #08101d, #0b1220 55%, #0a1424);
-      min-height: 100vh;
+        radial-gradient(circle at top left, rgba(0,242,255,0.12), transparent 28%),
+        radial-gradient(circle at top right, rgba(255,0,255,0.10), transparent 24%),
+        radial-gradient(circle at center, rgba(0,242,255,0.06), transparent 38%),
+        #050505;
+      overflow: hidden;
     }
-    .shell {
-      width: min(1180px, calc(100vw - 32px));
-      margin: 24px auto;
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        rgba(255,255,255,0.03) 0,
+        rgba(255,255,255,0.03) 1px,
+        transparent 2px,
+        transparent 4px
+      );
+      opacity: 0.08;
+      mix-blend-mode: screen;
+    }
+    body::after {
+      content: "";
+      position: fixed;
+      left: 0;
+      right: 0;
+      height: 140px;
+      top: -160px;
+      pointer-events: none;
+      background: linear-gradient(180deg, rgba(0,242,255,0), rgba(0,242,255,0.12), rgba(255,0,255,0));
+      animation: scanline 9s linear infinite;
+      filter: blur(4px);
+      opacity: 0.7;
+    }
+    @keyframes scanline {
+      from { transform: translateY(0); }
+      to { transform: translateY(calc(100vh + 220px)); }
+    }
+    @keyframes breathe {
+      0%, 100% { box-shadow: 0 0 8px rgba(0,242,255,0.35), 0 0 18px rgba(0,242,255,0.18); opacity: 0.72; }
+      50% { box-shadow: 0 0 16px rgba(0,242,255,0.78), 0 0 28px rgba(255,0,255,0.22); opacity: 1; }
+    }
+    @keyframes rise {
+      from { opacity: 0; transform: translateY(18px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .app {
+      position: relative;
+      z-index: 1;
       display: grid;
       grid-template-columns: 320px 1fr;
       gap: 18px;
+      width: min(1380px, calc(100vw - 24px));
+      height: calc(100vh - 24px);
+      margin: 12px auto;
     }
     .panel {
-      background: var(--panel);
-      border: 1px solid var(--panel-border);
-      border-radius: 28px;
-      box-shadow: var(--shadow);
-      backdrop-filter: blur(14px);
+      background: var(--glass);
+      border: 1px solid var(--line);
+      border-radius: 24px;
+      backdrop-filter: blur(10px);
+      box-shadow: var(--shadow-cyan);
+      position: relative;
+      overflow: hidden;
     }
-    .sidebar { padding: 22px; }
+    .panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background: linear-gradient(135deg, rgba(0,242,255,0.05), transparent 45%, rgba(255,0,255,0.03));
+    }
+    .sidebar {
+      padding: 20px;
+      display: grid;
+      grid-template-rows: auto auto auto 1fr;
+      gap: 14px;
+    }
     .brand {
       display: flex;
-      align-items: center;
       justify-content: space-between;
-      margin-bottom: 18px;
+      align-items: flex-start;
+      gap: 12px;
     }
     .brand h1 {
       margin: 0;
-      font-size: 28px;
-      letter-spacing: -0.04em;
+      font-size: 30px;
+      letter-spacing: 0.08em;
+      color: var(--cyan);
+      text-shadow: 0 0 10px rgba(0,242,255,0.55);
     }
-    .badge {
-      font-size: 12px;
-      color: #dbeafe;
-      border: 1px solid rgba(96,165,250,0.3);
-      background: rgba(59,130,246,0.16);
-      border-radius: 999px;
-      padding: 8px 10px;
-    }
-    .sub {
+    .brand small {
+      display: block;
+      margin-top: 6px;
       color: var(--muted);
-      margin: 0 0 18px;
       line-height: 1.5;
     }
-    .field { margin-bottom: 14px; }
-    .field label {
-      display: block;
+    .status-chip {
+      border: 1px solid rgba(255,0,255,0.45);
+      color: #ffd3ff;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255,0,255,0.08);
+      box-shadow: var(--shadow-pink);
+      white-space: nowrap;
       font-size: 12px;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
+    }
+    .key-strip {
+      padding: 14px 16px;
+      background: var(--glass-2);
+      border: 1px solid rgba(0,242,255,0.18);
+      border-radius: 18px;
+      box-shadow: inset 0 0 0 1px rgba(255,0,255,0.08), var(--shadow-cyan);
+    }
+    .key-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 10px;
+      font-size: 12px;
       color: var(--muted);
-      margin-bottom: 8px;
+    }
+    .key-bar {
+      height: 12px;
+      border-radius: 999px;
+      background: rgba(255,255,255,0.04);
+      overflow: hidden;
+      border: 1px solid rgba(0,242,255,0.22);
+      box-shadow: inset 0 0 16px rgba(0,242,255,0.08);
+    }
+    .key-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--cyan), var(--pink));
+      box-shadow: 0 0 15px #00f2ff;
+      transition: width 0.35s ease;
+    }
+    .field {
+      display: grid;
+      gap: 7px;
+    }
+    .field label {
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
     }
     select, textarea {
       width: 100%;
-      border: 1px solid rgba(148, 163, 184, 0.2);
-      background: rgba(15, 23, 42, 0.74);
-      color: var(--text);
       border-radius: 16px;
-      padding: 14px 16px;
+      border: 1px solid rgba(0,242,255,0.26);
+      background: rgba(7, 7, 10, 0.78);
+      color: var(--text);
       font: inherit;
+      padding: 14px 15px;
       outline: none;
+      box-shadow: inset 0 0 14px rgba(0,242,255,0.04);
+    }
+    select:focus, textarea:focus {
+      box-shadow: 0 0 15px #00f2ff, inset 0 0 14px rgba(0,242,255,0.07);
+      border-color: rgba(0,242,255,0.7);
     }
     textarea {
-      min-height: 84px;
-      resize: vertical;
+      min-height: 96px;
+      resize: none;
     }
-    .chips {
+    .quick-list {
       display: flex;
       flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 8px;
+      gap: 10px;
+      align-content: flex-start;
     }
-    .chip {
-      border: 1px solid rgba(96,165,250,0.24);
-      background: rgba(30, 41, 59, 0.76);
-      color: var(--text);
-      padding: 10px 12px;
-      border-radius: 999px;
-      cursor: pointer;
+    .quick-btn, .ghost-btn, .send-btn {
       font: inherit;
+      border-radius: 14px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: 0.22s ease;
     }
-    .chat-wrap {
+    .quick-btn, .ghost-btn {
+      background: rgba(0,0,0,0.28);
+      color: var(--text);
+      border: 1px solid rgba(0,242,255,0.28);
+    }
+    .quick-btn:hover, .ghost-btn:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 15px #00f2ff;
+      border-color: rgba(0,242,255,0.72);
+    }
+    .chat-shell {
       display: grid;
-      grid-template-rows: auto 1fr auto;
-      min-height: calc(100vh - 48px);
+      grid-template-rows: auto auto 1fr auto;
+      min-height: 0;
     }
-    .chat-head {
+    .topbar {
+      padding: 18px 22px 10px;
       display: flex;
       justify-content: space-between;
       align-items: center;
-      padding: 22px 24px 14px;
-      border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+      gap: 14px;
+      border-bottom: 1px solid rgba(0,242,255,0.12);
     }
-    .chat-head h2 {
+    .topbar h2 {
       margin: 0;
+      color: var(--cyan);
       font-size: 22px;
-      letter-spacing: -0.03em;
+      text-shadow: 0 0 10px rgba(0,242,255,0.35);
+    }
+    .subtitle {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+    .api-live {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 14px;
+      border-radius: 999px;
+      border: 1px solid rgba(0,242,255,0.35);
+      background: rgba(0,0,0,0.32);
+      box-shadow: var(--shadow-cyan);
+      animation: breathe 2.2s ease-in-out infinite;
+      color: var(--text);
+      font-size: 12px;
+    }
+    .api-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--cyan);
+      box-shadow: 0 0 15px #00f2ff;
+    }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 12px 22px 16px;
+      border-bottom: 1px solid rgba(0,242,255,0.08);
     }
     .chat-log {
-      padding: 24px;
       overflow: auto;
+      padding: 20px 22px;
       display: flex;
       flex-direction: column;
       gap: 16px;
+      min-height: 0;
     }
     .bubble {
+      position: relative;
       max-width: min(860px, 88%);
       padding: 16px 18px;
-      border-radius: var(--radius);
-      box-shadow: 0 12px 32px rgba(2,8,23,0.22);
-      position: relative;
-      line-height: 1.6;
-      white-space: normal;
+      border-radius: 20px;
+      border: 1px solid rgba(0,242,255,0.22);
+      background: rgba(20, 20, 20, 0.8);
+      backdrop-filter: blur(10px);
+      box-shadow: 0 0 15px rgba(0,242,255,0.18);
+      animation: rise 0.28s ease;
+      line-height: 1.65;
+      overflow-wrap: anywhere;
     }
     .bubble.user {
       align-self: flex-end;
-      background: var(--user);
-      border-bottom-right-radius: 10px;
+      border-color: rgba(0,242,255,0.38);
+      box-shadow: 0 0 15px rgba(0,242,255,0.22);
     }
     .bubble.bot {
       align-self: flex-start;
-      background: var(--bot);
-      border: 1px solid rgba(96,165,250,0.12);
-      border-bottom-left-radius: 10px;
+      border-color: rgba(255,0,255,0.18);
+      box-shadow: 0 0 15px rgba(0,242,255,0.12);
     }
-    .bubble-meta {
+    .bubble.system {
+      align-self: center;
+      max-width: min(760px, 100%);
+      border-color: rgba(255,0,255,0.34);
+      box-shadow: var(--shadow-pink);
+    }
+    .bubble-head {
       display: flex;
       justify-content: space-between;
+      align-items: center;
       gap: 12px;
       margin-bottom: 10px;
-      color: var(--muted);
       font-size: 12px;
+      color: var(--muted);
     }
-    .provider-pill {
+    .bubble-role {
+      color: var(--cyan);
+      text-shadow: 0 0 6px rgba(0,242,255,0.35);
+    }
+    .bubble-api {
       display: inline-flex;
       align-items: center;
-      gap: 6px;
-      border-radius: 999px;
+      gap: 8px;
       padding: 6px 10px;
-      background: rgba(59,130,246,0.14);
-      color: #cfe2ff;
-      border: 1px solid rgba(96,165,250,0.22);
+      border-radius: 999px;
+      border: 1px solid rgba(0,242,255,0.24);
+      background: rgba(0,0,0,0.28);
+      box-shadow: 0 0 10px rgba(0,242,255,0.18);
     }
     .bubble pre {
-      overflow: auto;
-      border-radius: 16px;
+      background: rgba(0, 0, 0, 0.74);
+      border: 1px solid rgba(0,242,255,0.22);
+      border-radius: 14px;
       padding: 14px;
-      background: #08101b;
-      border: 1px solid rgba(96,165,250,0.12);
-      font-family: "JetBrains Mono", monospace;
+      overflow: auto;
+      box-shadow: inset 0 0 18px rgba(0,242,255,0.06);
     }
     .bubble code {
-      font-family: "JetBrains Mono", monospace;
+      font-family: "JetBrains Mono", "Courier New", monospace;
     }
     .composer {
-      padding: 18px 24px 24px;
-      border-top: 1px solid rgba(148, 163, 184, 0.1);
+      padding: 16px 22px 22px;
+      border-top: 1px solid rgba(0,242,255,0.12);
       display: grid;
-      gap: 10px;
+      gap: 12px;
+      background: rgba(5, 5, 5, 0.45);
+    }
+    .status-line {
+      color: var(--muted);
+      min-height: 18px;
+      font-size: 13px;
     }
     .composer-row {
       display: grid;
@@ -2531,28 +2699,51 @@ def web_ui_html() -> str:
       gap: 12px;
       align-items: end;
     }
-    .send {
-      border: none;
-      border-radius: 18px;
-      padding: 14px 18px;
-      background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    .send-btn {
+      min-width: 168px;
+      height: 54px;
+      background: transparent;
+      color: var(--cyan);
+      border: 1px solid rgba(0,242,255,0.48);
+      box-shadow: var(--shadow-cyan);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .send-btn:hover {
       color: white;
-      font: inherit;
-      font-weight: 700;
-      cursor: pointer;
-      box-shadow: 0 10px 25px rgba(37, 99, 235, 0.3);
+      transform: translateY(-1px);
+      background: rgba(0,242,255,0.08);
+      box-shadow: 0 0 18px #00f2ff;
     }
-    .status {
-      color: var(--muted);
-      font-size: 13px;
-      min-height: 18px;
+    .send-btn:disabled {
+      opacity: 0.55;
+      cursor: wait;
     }
-    @media (max-width: 980px) {
-      .shell {
+    @media (max-width: 1100px) {
+      .app {
+        grid-template-columns: 1fr;
+        height: auto;
+        min-height: calc(100vh - 24px);
+      }
+      .chat-shell {
+        min-height: 70vh;
+      }
+    }
+    @media (max-width: 720px) {
+      .app {
+        width: calc(100vw - 14px);
+        margin: 7px auto;
+        gap: 12px;
+      }
+      .topbar, .toolbar, .chat-log, .composer, .sidebar {
+        padding-left: 14px;
+        padding-right: 14px;
+      }
+      .composer-row {
         grid-template-columns: 1fr;
       }
-      .chat-wrap {
-        min-height: auto;
+      .send-btn {
+        width: 100%;
       }
       .bubble {
         max-width: 100%;
@@ -2561,56 +2752,90 @@ def web_ui_html() -> str:
   </style>
 </head>
 <body>
-  <div class="shell">
+  <div class="app">
     <aside class="panel sidebar">
       <div class="brand">
-        <h1>AI Bot</h1>
-        <div class="badge">Dark UI</div>
+        <div>
+          <h1>AI BOT</h1>
+          <small>Cyberpunk dark neon console for multi-provider chat, code and media workflows.</small>
+        </div>
+        <div class="status-chip">SYNTH MODE</div>
       </div>
-      <p class="sub">Профессиональный интерфейс для multi-provider чата: роли, модели, индикатор API и аккуратный рендер ответов.</p>
+
+      <div class="key-strip">
+        <div class="key-head">
+          <span id="keyLabel">Key #1/20</span>
+          <span id="keyPercent">5%</span>
+        </div>
+        <div class="key-bar"><div class="key-bar-fill" id="keyBarFill"></div></div>
+      </div>
+
       <div class="field">
-        <label for="roleSelect">Роль</label>
+        <label for="roleSelect">ROLE</label>
         <select id="roleSelect"></select>
       </div>
+
       <div class="field">
-        <label for="modelSelect">Модель</label>
+        <label for="modelSelect">MODEL</label>
         <select id="modelSelect"></select>
       </div>
+
       <div class="field">
-        <label>Quick Replies</label>
-        <div class="chips" id="quickReplies"></div>
+        <label>QUICK REPLIES</label>
+        <div class="quick-list" id="quickReplies"></div>
       </div>
     </aside>
-    <main class="panel chat-wrap">
-      <div class="chat-head">
+
+    <main class="panel chat-shell">
+      <div class="topbar">
         <div>
-          <h2>Панель общения</h2>
-          <div class="sub" style="margin:6px 0 0">Провайдер и модель видны на каждом ответе.</div>
+          <h2>Cyber Console</h2>
+          <div class="subtitle">Code highlighting, provider telemetry, neon response cards.</div>
         </div>
-        <div class="provider-pill" id="sessionBadge">⚡ Готов</div>
+        <div class="api-live" id="sessionBadge">
+          <span class="api-dot"></span>
+          <span>API READY</span>
+        </div>
       </div>
+
+      <div class="toolbar">
+        <button class="ghost-btn" id="clearHistoryBtn">Clear history</button>
+        <button class="ghost-btn" id="scrollBottomBtn">Scroll to bottom</button>
+      </div>
+
       <div class="chat-log" id="chatLog"></div>
+
       <div class="composer">
-        <div class="status" id="status">Готов к работе.</div>
+        <div class="status-line" id="statusLine">Stand by. Select role, select model, send task.</div>
         <div class="composer-row">
-          <textarea id="promptInput" placeholder="Напиши задачу: код, продажа, диагностика, план, объявление..."></textarea>
-          <button class="send" id="sendBtn">Отправить</button>
+          <textarea id="promptInput" placeholder="????? ??????: ???, ???????????, ???????, ??????, ????, ??????????..."></textarea>
+          <button class="send-btn" id="sendBtn">Send signal</button>
         </div>
       </div>
     </main>
   </div>
+
   <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/highlight.min.js"></script>
   <script>
-    const state = { config: null, history: JSON.parse(localStorage.getItem('webHistory') || '[]') };
+    const state = {
+      config: null,
+      history: JSON.parse(localStorage.getItem('webHistory') || '[]')
+    };
+
     const roleSelect = document.getElementById('roleSelect');
     const modelSelect = document.getElementById('modelSelect');
     const promptInput = document.getElementById('promptInput');
     const sendBtn = document.getElementById('sendBtn');
     const quickReplies = document.getElementById('quickReplies');
     const chatLog = document.getElementById('chatLog');
-    const statusEl = document.getElementById('status');
+    const statusLine = document.getElementById('statusLine');
     const sessionBadge = document.getElementById('sessionBadge');
+    const keyLabel = document.getElementById('keyLabel');
+    const keyPercent = document.getElementById('keyPercent');
+    const keyBarFill = document.getElementById('keyBarFill');
+    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
+    const scrollBottomBtn = document.getElementById('scrollBottomBtn');
 
     marked.setOptions({
       breaks: true,
@@ -2626,12 +2851,36 @@ def web_ui_html() -> str:
       localStorage.setItem('webHistory', JSON.stringify(state.history.slice(-20)));
     }
 
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    }
+
+    function roleLabel(role) {
+      if (role === 'user') return 'USER';
+      if (role === 'system') return 'SYSTEM';
+      return 'BOT';
+    }
+
     function bubbleHtml(item) {
-      const cls = item.role === 'user' ? 'user' : 'bot';
-      const label = item.role === 'user' ? 'Ты' : 'Бот';
-      const meta = item.providerTitle ? `<span class="provider-pill">⚡ ${item.providerTitle} · ${item.modelId || ''}</span>` : '';
-      const body = item.role === 'assistant' ? marked.parse(item.content) : item.content.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\\n/g, '<br>');
-      return `<article class="bubble ${cls}"><div class="bubble-meta"><strong>${label}</strong>${meta}</div><div>${body}</div></article>`;
+      const kind = item.kind || (item.role === 'user' ? 'user' : 'bot');
+      const body = item.role === 'user'
+        ? escapeHtml(item.content).replace(/\n/g, '<br>')
+        : marked.parse(item.content || '');
+      const providerMeta = item.providerTitle
+        ? `<span class="bubble-api">API ${escapeHtml(item.providerTitle)} | ${escapeHtml(item.modelId || '')}</span>`
+        : '';
+      return `
+        <article class="bubble ${kind}">
+          <div class="bubble-head">
+            <span class="bubble-role">${roleLabel(item.role)}</span>
+            ${providerMeta}
+          </div>
+          <div class="bubble-body">${body}</div>
+        </article>
+      `;
     }
 
     function renderHistory() {
@@ -2640,26 +2889,51 @@ def web_ui_html() -> str:
       chatLog.scrollTop = chatLog.scrollHeight;
     }
 
+    function setKeyStatus(active, total) {
+      const safeActive = Math.max(1, Number(active || 1));
+      const safeTotal = Math.max(safeActive, Number(total || 20));
+      const percent = Math.max(1, Math.min(100, Math.round((safeActive / safeTotal) * 100)));
+      keyLabel.textContent = `Key #${safeActive}/${safeTotal}`;
+      keyPercent.textContent = `${percent}%`;
+      keyBarFill.style.width = `${percent}%`;
+    }
+
     function fillConfig(config) {
       state.config = config;
-      roleSelect.innerHTML = config.roles.map(role => `<option value="${role.id}">${role.title}</option>`).join('');
+      roleSelect.innerHTML = config.roles
+        .map(role => `<option value="${role.id}">${escapeHtml(role.title)}</option>`)
+        .join('');
       modelSelect.innerHTML = config.models
         .filter(model => model.type === 'chat')
-        .map(model => `<option value="${model.key}">${model.label}</option>`)
+        .map(model => `<option value="${model.key}">${escapeHtml(model.label)}</option>`)
         .join('');
       roleSelect.value = config.defaultRoleId || 'general';
-      if (config.defaultModelKey) modelSelect.value = config.defaultModelKey;
+      if (config.defaultModelKey) {
+        modelSelect.value = config.defaultModelKey;
+      }
+      setKeyStatus(config.keySlotActive, config.keySlotsTotal);
       quickReplies.innerHTML = '';
       config.quickReplies.forEach(text => {
         const btn = document.createElement('button');
-        btn.className = 'chip';
+        btn.className = 'quick-btn';
         btn.textContent = text;
-        btn.onclick = () => {
+        btn.addEventListener('click', () => {
           promptInput.value = text;
           promptInput.focus();
-        };
+        });
         quickReplies.appendChild(btn);
       });
+    }
+
+    function pushSystemMessage(content) {
+      state.history.push({
+        role: 'system',
+        kind: 'system',
+        content,
+        providerTitle: 'SYSTEM',
+        modelId: 'UI'
+      });
+      saveHistory();
       renderHistory();
     }
 
@@ -2668,13 +2942,8 @@ def web_ui_html() -> str:
       const config = await res.json();
       fillConfig(config);
       if (!state.history.length) {
-        state.history.push({
-          role: 'assistant',
-          content: '**Готов к работе.** Выбери роль и модель слева, затем отправь задачу.\\n\\nПоддерживаются код, списки, структурированные ответы и подсветка блоков кода.',
-          providerTitle: 'System',
-          modelId: 'UI'
-        });
-        saveHistory();
+        pushSystemMessage('**System online.** Select role, select model, then send your task.\n\nSupports code, neat lists, metadata cards and provider telemetry.');
+      } else {
         renderHistory();
       }
     }
@@ -2682,27 +2951,32 @@ def web_ui_html() -> str:
     async function sendMessage() {
       const message = promptInput.value.trim();
       if (!message) return;
+
       const payload = {
         message,
         roleId: roleSelect.value,
         selectedModelKey: modelSelect.value,
-        history: state.history.filter(item => item.role === 'user' || item.role === 'assistant').map(item => ({
-          role: item.role === 'assistant' ? 'assistant' : 'user',
-          content: item.content
-        }))
+        history: state.history
+          .filter(item => item.role === 'user' || item.role === 'assistant')
+          .map(item => ({ role: item.role, content: item.content }))
       };
-      state.history.push({ role: 'user', content: message });
+
+      state.history.push({ role: 'user', kind: 'user', content: message });
       promptInput.value = '';
       saveHistory();
       renderHistory();
-      statusEl.textContent = 'Generating... [----------] 0%';
+
+      statusLine.textContent = 'Generating... [----------] 0%';
+      sessionBadge.innerHTML = '<span class="api-dot"></span><span>API ACTIVE</span>';
       sendBtn.disabled = true;
+
       let progress = 0;
       const progressTimer = setInterval(() => {
-        progress = Math.min(progress + 13, 94);
+        progress = Math.min(progress + 11, 94);
         const filled = Math.max(0, Math.min(10, Math.round(progress / 10)));
-        statusEl.textContent = `Generating... [${'#'.repeat(filled)}${'-'.repeat(10 - filled)}] ${progress}%`;
-      }, 700);
+        statusLine.textContent = `Generating... [${'#'.repeat(filled)}${'-'.repeat(10 - filled)}] ${progress}%`;
+      }, 650);
+
       try {
         const res = await fetch('/api/chat', {
           method: 'POST',
@@ -2711,38 +2985,57 @@ def web_ui_html() -> str:
         });
         const data = await res.json();
         clearInterval(progressTimer);
-        if (!data.ok) throw new Error(data.error || 'Response error');
-        sessionBadge.textContent = `API ${data.providerTitle} | ${data.modelId}`;
-        const metadataBlock = data.metadataLines?.length
-          ? `
+        if (!data.ok) {
+          throw new Error(data.error || 'Response error');
+        }
 
-\`\`\`text
-${data.metadataLines.join('\n')}
-\`\`\``
+        const metadataBlock = data.metadataLines && data.metadataLines.length
+          ? `\n\n\`\`\`text\n${data.metadataLines.join('\n')}\n\`\`\``
           : '';
+
         state.history.push({
           role: 'assistant',
+          kind: 'bot',
           content: `${data.answer}${metadataBlock}`,
           providerTitle: data.providerTitle,
           modelId: data.modelId
         });
-        statusEl.textContent = data.warning || `Done. [##########] 100% | ${data.providerTitle} / ${data.modelId}`;
         saveHistory();
         renderHistory();
+
+        sessionBadge.innerHTML = `<span class="api-dot"></span><span>API ${escapeHtml(data.providerTitle)} | ${escapeHtml(data.modelId)}</span>`;
+        statusLine.textContent = data.warning || `Done. [##########] 100% | ${data.providerTitle} / ${data.modelId}`;
       } catch (err) {
         clearInterval(progressTimer);
-        statusEl.textContent = `Error: ${err.message}`;
-        state.history.push({ role: 'assistant', content: `**Error:** ${err.message}`, providerTitle: 'System', modelId: 'ERR' });
+        const message = err && err.message ? err.message : 'Unknown error';
+        state.history.push({
+          role: 'system',
+          kind: 'system',
+          content: `**Error:** ${message}`,
+          providerTitle: 'SYSTEM',
+          modelId: 'ERR'
+        });
         saveHistory();
         renderHistory();
+        statusLine.textContent = `Error: ${message}`;
       } finally {
         sendBtn.disabled = false;
       }
     }
 
     sendBtn.addEventListener('click', sendMessage);
-    promptInput.addEventListener('keydown', (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') sendMessage();
+    clearHistoryBtn.addEventListener('click', () => {
+      state.history = [];
+      localStorage.removeItem('webHistory');
+      pushSystemMessage('**History cleared.** Console reset complete.');
+    });
+    scrollBottomBtn.addEventListener('click', () => {
+      chatLog.scrollTop = chatLog.scrollHeight;
+    });
+    promptInput.addEventListener('keydown', (event) => {
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        sendMessage();
+      }
     });
 
     boot();
