@@ -661,6 +661,50 @@ ROLE_SPECS: list[RoleSpec] = [
 
 ROLE_MAP: dict[str, RoleSpec] = {r.role_id: r for r in ROLE_SPECS}
 
+WEB_ROLE_TITLES: dict[str, str] = {
+    "general": "Универсал",
+    "teacher": "Учитель",
+    "lang_teacher": "Учитель языков",
+    "coder": "Кодер",
+    "programmer": "Программист",
+    "debugger": "Отладчик",
+    "architect": "Архитектор",
+    "product": "Продакт",
+    "marketing": "Маркетолог",
+    "copywriter": "Копирайтер",
+    "sales": "Продажник",
+    "avitolog": "Авитолог",
+    "repair_master": "Ремонт техники",
+    "gardener": "Садовод",
+    "mechanic": "Механик",
+    "recruiter": "Рекрутер",
+    "law_basic": "Юрист-черновик",
+    "finance_basic": "Финансы",
+    "analyst": "Аналитик",
+    "scientist": "Исследователь",
+    "biologist": "Биолог",
+    "chemist": "Химик",
+    "physicist": "Физик",
+    "doctor_info": "Мед-справка",
+    "psychology": "Психолог",
+    "translator": "Переводчик",
+    "editor": "Редактор",
+    "summarizer": "Краткий обзор",
+    "prompt_engineer": "Промпт-инженер",
+    "smm": "SMM",
+    "seo": "SEO",
+    "designer": "Дизайнер",
+    "qa": "QA",
+    "devops": "DevOps",
+    "security": "Безопасность",
+    "historian": "Историк",
+    "travel": "Тревел",
+    "chef": "Шеф-повар",
+    "fitness": "Фитнес",
+    "storyteller": "Сценарист",
+    "crime_fiction": "Crime Fiction",
+}
+
 
 class BaseClient:
     provider_id: str
@@ -2238,6 +2282,39 @@ async def on_error(update: object, context: ContextTypes.DEFAULT_TYPE) -> None:
 
 def build_web_catalog(bot_data: dict[str, Any]) -> list[dict[str, str]]:
     catalog: list[ModelEntry] = bot_data.get("models_catalog", [])
+    if not catalog:
+        chat_providers: set[str] = bot_data.get("chat_providers", set())
+        fallback_catalog: list[ModelEntry] = []
+        for provider_id in sorted(chat_providers):
+            for model_id in STATIC_CHAT_MODELS.get(provider_id, []):
+                fallback_catalog.append(
+                    ModelEntry(
+                        key=model_key(provider_id, model_id, MODEL_TYPE_CHAT),
+                        provider_id=provider_id,
+                        model_id=model_id,
+                        model_type=MODEL_TYPE_CHAT,
+                        providers=[provider_id],
+                    )
+                )
+        for model_id in bot_data.get("pollinations_image_models", []):
+            fallback_catalog.append(
+                ModelEntry(
+                    key=model_key(PROVIDER_POLLINATIONS, model_id, MODEL_TYPE_IMAGE),
+                    provider_id=PROVIDER_POLLINATIONS,
+                    model_id=model_id,
+                    model_type=MODEL_TYPE_IMAGE,
+                )
+            )
+        for model_id in bot_data.get("pollinations_video_models", []):
+            fallback_catalog.append(
+                ModelEntry(
+                    key=model_key(PROVIDER_POLLINATIONS, model_id, MODEL_TYPE_VIDEO),
+                    provider_id=PROVIDER_POLLINATIONS,
+                    model_id=model_id,
+                    model_type=MODEL_TYPE_VIDEO,
+                )
+            )
+        catalog = fallback_catalog
     items: list[dict[str, str]] = []
     for entry in catalog:
         items.append(
@@ -2255,6 +2332,19 @@ def build_web_catalog(bot_data: dict[str, Any]) -> list[dict[str, str]]:
 
 def build_web_config(bot_data: dict[str, Any]) -> dict[str, Any]:
     catalog: list[ModelEntry] = bot_data.get("models_catalog", [])
+    if not catalog:
+        catalog = []
+        for provider_id in sorted(bot_data.get("chat_providers", set())):
+            for model_id in STATIC_CHAT_MODELS.get(provider_id, []):
+                catalog.append(
+                    ModelEntry(
+                        key=model_key(provider_id, model_id, MODEL_TYPE_CHAT),
+                        provider_id=provider_id,
+                        model_id=model_id,
+                        model_type=MODEL_TYPE_CHAT,
+                        providers=[provider_id],
+                    )
+                )
     preferred_key = preferred_chat_model_key(catalog)
     key_slot_active = max(1, int(os.getenv("KEY_SLOT_ACTIVE", "1") or "1"))
     key_slots_total = max(key_slot_active, int(os.getenv("KEY_SLOTS_TOTAL", "20") or "20"))
@@ -2265,13 +2355,13 @@ def build_web_config(bot_data: dict[str, Any]) -> dict[str, Any]:
         "defaultModelKey": preferred_key,
         "keySlotActive": key_slot_active,
         "keySlotsTotal": key_slots_total,
-        "roles": [{"id": role.role_id, "title": role.title} for role in ROLE_SPECS],
+        "roles": [{"id": role.role_id, "title": WEB_ROLE_TITLES.get(role.role_id, role.role_id)} for role in ROLE_SPECS],
         "models": build_web_catalog(bot_data),
         "quickReplies": [
             "Напиши продающее описание услуги",
             "Разбери ошибку в коде",
             "Составь план ремонта",
-            "Сделай короткий оффер для Avito",
+            "Сделай оффер для Avito",
         ],
     }
 
@@ -2836,7 +2926,7 @@ def web_ui_html() -> str:
       <div class="composer">
         <div class="status-line" id="statusLine">Stand by. Select role, select model, send task.</div>
         <div class="composer-row">
-          <textarea id="promptInput" placeholder="????? ??????: ???, ???????????, ???????, ??????, ????, ??????????..."></textarea>
+          <textarea id="promptInput" placeholder="Task: code, diagnostics, ad copy, analysis, plan, listing..."></textarea>
           <button class="send-btn" id="sendBtn">Send signal</button>
         </div>
       </div>
