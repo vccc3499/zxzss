@@ -1,6 +1,48 @@
 services:
   - type: web
-    runtime: static
-    name: ai-catalog
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./out
+    runtime: python
+    name: tg-ai-bot
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: python tg_openrouter_bot.py
+    healthCheckPath: /
+    autoDeploy: true
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: HF_API_KEY
+        sync: false
+      - key: MISTRAL_API_KEY
+        sync: false
+      - key: SILICONFLOW_API_KEY
+        sync: false
+      - key: LEGNEXT_API_KEY
+        sync: false
+      - key: POLLINATIONS_API_KEY
+        sync: false
+      - key: POLLINATIONS_ENABLE
+        sync: false
+      - key: POLLINATIONS_TEXT_MODELS
+        sync: false
+      - key: POLLINATIONS_IMAGE_MODELS
+        sync: false
+      - key: POLLINATIONS_VIDEO_MODELS
+        sync: false
+      - key: LEGNEXT_IMAGE_MODELS
+        sync: false
+      - key: LEGNEXT_VIDEO_MODELS
+        sync: false
+      - key: LEGNEXT_BASE_URL
+        sync: false
+      - key: POLLINATIONS_GEN_BASE
+        sync: false
+      - key: SITE_URL
+        sync: false
+      - key: MODEL_TOKEN_LIMITS
+        sync: false
+      - key: MODEL_REQUEST_LIMITS
+        sync: false
