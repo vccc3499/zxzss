@@ -1,0 +1,95 @@
+﻿@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 224 38% 4%;
+  --foreground: 195 100% 94%;
+  --card: 222 38% 8%;
+  --card-foreground: 195 100% 94%;
+  --popover: 222 38% 8%;
+  --popover-foreground: 195 100% 94%;
+  --primary: 184 100% 50%;
+  --primary-foreground: 224 40% 8%;
+  --secondary: 222 32% 14%;
+  --secondary-foreground: 195 100% 94%;
+  --muted: 223 24% 12%;
+  --muted-foreground: 201 18% 67%;
+  --accent: 302 100% 50%;
+  --accent-foreground: 300 100% 96%;
+  --border: 189 100% 50% / 0.18;
+  --input: 220 28% 15%;
+  --ring: 184 100% 50%;
+}
+
+* {
+  @apply border-border;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  @apply bg-[#03050b] text-foreground antialiased;
+  background-image:
+    radial-gradient(circle at 15% 10%, rgba(0,242,255,0.12), transparent 18%),
+    radial-gradient(circle at 82% 14%, rgba(255,0,245,0.11), transparent 18%),
+    radial-gradient(circle at 50% 85%, rgba(110,139,255,0.11), transparent 22%),
+    linear-gradient(180deg, #04060c 0%, #040713 42%, #03050b 100%);
+}
+
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background-image: linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(circle at center, black, transparent 86%);
+  opacity: 0.22;
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent 0%, rgba(0,242,255,0.05) 45%, transparent 100%);
+  animation: scanline 12s linear infinite;
+  opacity: 0.35;
+}
+
+@keyframes scanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+@layer utilities {
+  .glass {
+    @apply border border-white/10 bg-white/5 backdrop-blur-2xl;
+  }
+
+  .text-glow {
+    text-shadow: 0 0 12px rgba(0, 242, 255, 0.45);
+  }
+
+  .text-glow-magenta {
+    text-shadow: 0 0 14px rgba(255, 0, 245, 0.38);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 242, 255, 0.35) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: linear-gradient(180deg, rgba(0,242,255,0.4), rgba(255,0,245,0.3));
+    border-radius: 999px;
+  }
+}

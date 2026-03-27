@@ -12,3 +12,6 @@ avito_profile/
 tools/python/
 tools/python-embed.zip
 mindcraft/
+
+.next/
+out/
