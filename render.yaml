@@ -1,12 +1,13 @@
 services:
-  - type: static
+  - type: web
+    runtime: static
     name: ai-catalog
     buildCommand: npm install && npm run build
     staticPublishPath: ./out
 
   - type: web
+    runtime: python
     name: tg-ai-bot
-    env: python
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: python tg_openrouter_bot.py
