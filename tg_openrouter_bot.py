@@ -2469,7 +2469,8 @@ def web_ui_html() -> str:
         radial-gradient(circle at top right, rgba(255,0,255,0.10), transparent 24%),
         radial-gradient(circle at center, rgba(0,242,255,0.06), transparent 38%),
         #050505;
-      overflow: hidden;
+      overflow-x: hidden;
+      overflow-y: auto;
     }
     body::before {
       content: "";
@@ -2511,6 +2512,14 @@ def web_ui_html() -> str:
       from { opacity: 0; transform: translateY(18px); }
       to { opacity: 1; transform: translateY(0); }
     }
+    @keyframes floatGlow {
+      0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.35; }
+      50% { transform: translate3d(0, -8px, 0) scale(1.03); opacity: 0.6; }
+    }
+    @keyframes borderPulse {
+      0%, 100% { box-shadow: 0 0 12px rgba(0,242,255,0.18); }
+      50% { box-shadow: 0 0 22px rgba(255,0,255,0.18), 0 0 18px rgba(0,242,255,0.28); }
+    }
     .app {
       position: relative;
       z-index: 1;
@@ -2518,8 +2527,31 @@ def web_ui_html() -> str:
       grid-template-columns: 320px 1fr;
       gap: 18px;
       width: min(1380px, calc(100vw - 24px));
-      height: calc(100vh - 24px);
+      min-height: calc(100dvh - 24px);
       margin: 12px auto;
+    }
+    .app::before,
+    .app::after {
+      content: "";
+      position: fixed;
+      width: 280px;
+      height: 280px;
+      border-radius: 50%;
+      filter: blur(70px);
+      pointer-events: none;
+      z-index: -1;
+      animation: floatGlow 7s ease-in-out infinite;
+    }
+    .app::before {
+      top: 4vh;
+      left: 2vw;
+      background: rgba(0,242,255,0.12);
+    }
+    .app::after {
+      right: 3vw;
+      bottom: 10vh;
+      background: rgba(255,0,255,0.1);
+      animation-delay: -3.5s;
     }
     .panel {
       background: var(--glass);
@@ -2529,6 +2561,7 @@ def web_ui_html() -> str:
       box-shadow: var(--shadow-cyan);
       position: relative;
       overflow: hidden;
+      animation: borderPulse 5.5s ease-in-out infinite;
     }
     .panel::before {
       content: "";
@@ -2726,6 +2759,15 @@ def web_ui_html() -> str:
       line-height: 1.65;
       overflow-wrap: anywhere;
     }
+    .bubble::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background: linear-gradient(135deg, rgba(0,242,255,0.08), transparent 42%, rgba(255,0,255,0.06));
+      opacity: 0.7;
+    }
     .bubble.user {
       align-self: flex-end;
       border-color: rgba(0,242,255,0.38);
@@ -2840,7 +2882,6 @@ def web_ui_html() -> str:
     @media (max-width: 1100px) {
       .app {
         grid-template-columns: 1fr;
-        height: auto;
         min-height: calc(100vh - 24px);
       }
       .chat-shell {
@@ -2848,23 +2889,88 @@ def web_ui_html() -> str:
       }
     }
     @media (max-width: 720px) {
+      body {
+        padding-bottom: 0;
+      }
       .app {
         width: calc(100vw - 14px);
         margin: 7px auto;
         gap: 12px;
+        min-height: calc(100dvh - 14px);
+      }
+      .chat-shell {
+        order: 1;
+        min-height: calc(100dvh - 14px);
+      }
+      .sidebar {
+        order: 2;
       }
       .topbar, .toolbar, .chat-log, .composer, .sidebar {
         padding-left: 14px;
         padding-right: 14px;
       }
+      .topbar {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        background: rgba(5, 5, 5, 0.86);
+        backdrop-filter: blur(10px);
+      }
+      .toolbar {
+        overflow-x: auto;
+        flex-wrap: nowrap;
+        scrollbar-width: none;
+      }
+      .toolbar::-webkit-scrollbar {
+        display: none;
+      }
+      .chat-log {
+        min-height: 42dvh;
+        max-height: 52dvh;
+        padding-bottom: 120px;
+      }
+      .composer {
+        position: sticky;
+        bottom: 0;
+        z-index: 5;
+        background: rgba(5, 5, 5, 0.94);
+        backdrop-filter: blur(12px);
+        border-top: 1px solid rgba(0,242,255,0.2);
+      }
       .composer-row {
         grid-template-columns: 1fr;
+      }
+      textarea {
+        min-height: 82px;
       }
       .send-btn {
         width: 100%;
       }
       .bubble {
         max-width: 100%;
+      }
+      .quick-list {
+        max-height: 160px;
+        overflow: auto;
+        padding-right: 4px;
+      }
+    }
+    @media (max-width: 520px) {
+      .brand {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+      .brand h1 {
+        font-size: 24px;
+      }
+      .status-chip,
+      .api-live,
+      .ghost-btn,
+      .quick-btn {
+        font-size: 11px;
+      }
+      .bubble {
+        padding: 14px 14px;
       }
     }
   </style>
