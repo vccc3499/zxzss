@@ -2462,6 +2462,8 @@ def web_ui_html() -> str:
       --shadow-cyan: 0 0 22px rgba(0, 242, 255, 0.24);
       --shadow-magenta: 0 0 28px rgba(255, 0, 255, 0.18);
       --radius: 28px;
+      --mx: 0px;
+      --my: 0px;
     }
     * { box-sizing: border-box; }
     html, body { min-height: 100%; }
@@ -2501,7 +2503,7 @@ def web_ui_html() -> str:
       animation: scanline 10s linear infinite;
       opacity: 0.7;
     }
-    .space, .stars, .nebula, .orbs {
+    .space, .stars, .nebula, .orbs, .planets, .astronaut {
       position: fixed;
       inset: 0;
       pointer-events: none;
@@ -2513,6 +2515,7 @@ def web_ui_html() -> str:
         radial-gradient(circle at 70% 28%, rgba(255,0,255,.10), transparent 20%);
       filter: blur(30px);
       opacity: 0.85;
+      transform: translate3d(calc(var(--mx) * .015), calc(var(--my) * .015), 0);
     }
     .stars {
       background-image:
@@ -2523,6 +2526,7 @@ def web_ui_html() -> str:
       background-position: 0 0, 40px 80px, 120px 60px;
       opacity: 0.6;
       animation: drift 30s linear infinite;
+      transform: translate3d(calc(var(--mx) * .02), calc(var(--my) * .02), 0);
     }
     .nebula {
       background:
@@ -2531,6 +2535,7 @@ def web_ui_html() -> str:
         radial-gradient(circle at 60% 84%, rgba(106,125,255,.18), transparent 24%);
       filter: blur(28px);
       animation: floatNebula 18s ease-in-out infinite;
+      transform: translate3d(calc(var(--mx) * .03), calc(var(--my) * .03), 0);
     }
     .orbs::before, .orbs::after {
       content: "";
@@ -2552,6 +2557,43 @@ def web_ui_html() -> str:
       bottom: 8%;
       background: rgba(255, 0, 255, 0.16);
       animation-delay: -4s;
+    }
+    .planets::before, .planets::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      box-shadow: 0 0 30px rgba(255,0,255,.18), inset -26px -22px 60px rgba(0,0,0,.28);
+    }
+    .planets::before {
+      width: 220px;
+      height: 220px;
+      top: 10%;
+      right: 10%;
+      background:
+        radial-gradient(circle at 36% 32%, rgba(255,255,255,.35), transparent 18%),
+        radial-gradient(circle at 58% 60%, rgba(110,85,255,.48), transparent 58%),
+        linear-gradient(135deg, rgba(255,0,255,.82), rgba(92,42,255,.78));
+      transform: translate3d(calc(var(--mx) * -.05), calc(var(--my) * -.05), 0);
+    }
+    .planets::after {
+      width: 120px;
+      height: 120px;
+      left: 8%;
+      bottom: 14%;
+      background:
+        radial-gradient(circle at 30% 28%, rgba(255,255,255,.26), transparent 20%),
+        linear-gradient(135deg, rgba(125,40,255,.8), rgba(255,0,220,.68));
+      transform: translate3d(calc(var(--mx) * .06), calc(var(--my) * .06), 0);
+    }
+    .astronaut {
+      background-repeat: no-repeat;
+      background-position: 14% 62%;
+      background-size: min(320px, 32vw);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 260'%3E%3Cg fill='none' stroke='%2300f2ff' stroke-width='4'%3E%3Cellipse cx='120' cy='70' rx='42' ry='46' fill='rgba(255,255,255,0.08)'/%3E%3Cpath d='M85 70c8-28 62-28 70 0' stroke='%23ff00ff'/%3E%3Cpath d='M92 120c18 10 58 10 76 0l20 48-28 14-10-23-12 62h-34l-8-62-14 21-26-12 18-48z' fill='rgba(255,255,255,0.05)'/%3E%3Cpath d='M84 128l-34 24M160 128l40 20M104 218l-22 28M136 220l18 30' stroke='%23ffffff'/%3E%3Ccircle cx='120' cy='70' r='18' fill='rgba(0,242,255,0.14)'/%3E%3Cpath d='M52 152c18 10 26 28 18 42' stroke='%23ff00ff'/%3E%3Cpath d='M196 148c12 10 18 26 10 42' stroke='%2300f2ff'/%3E%3C/g%3E%3C/svg%3E");
+      filter: drop-shadow(0 0 22px rgba(0,242,255,.35)) drop-shadow(0 0 36px rgba(255,0,255,.16));
+      opacity: .9;
+      transform: translate3d(calc(var(--mx) * -.08), calc(var(--my) * -.08), 0) rotate(-10deg);
+      animation: astronautFloat 10s ease-in-out infinite;
     }
     @keyframes scanline {
       from { transform: translateY(0); }
@@ -2576,6 +2618,14 @@ def web_ui_html() -> str:
     @keyframes loadingGlow {
       0%, 100% { box-shadow: 0 0 12px rgba(0,242,255,0.18); }
       50% { box-shadow: 0 0 24px rgba(255,0,255,0.18), 0 0 20px rgba(0,242,255,0.3); }
+    }
+    @keyframes astronautFloat {
+      0%, 100% { background-position: 14% 62%; }
+      50% { background-position: 16% 58%; }
+    }
+    @keyframes roleFlash {
+      0% { opacity: 0; transform: scale(.96); }
+      100% { opacity: 1; transform: scale(1); }
     }
     .app {
       position: relative;
@@ -2686,6 +2736,13 @@ def web_ui_html() -> str:
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: .22em;
+    }
+    .field.model-active {
+      filter: drop-shadow(0 0 14px rgba(0,242,255,.25));
+    }
+    .field.model-active select {
+      border-color: rgba(0,242,255,.56);
+      box-shadow: 0 0 18px rgba(0,242,255,.22), 0 0 28px rgba(255,0,255,.16), inset 0 0 28px rgba(0,242,255,.10);
     }
     select, textarea {
       width: 100%;
@@ -2809,6 +2866,14 @@ def web_ui_html() -> str:
       gap: 10px;
       border-bottom: 1px solid rgba(0,242,255,.08);
     }
+    .mobile-controls {
+      display: none;
+      width: 100%;
+      gap: 10px;
+    }
+    .mobile-controls .field {
+      flex: 1;
+    }
     .chat-log {
       min-height: 0;
       overflow: auto;
@@ -2854,6 +2919,9 @@ def web_ui_html() -> str:
       max-width: min(700px, 100%);
       border-color: rgba(255,0,255,.24);
       box-shadow: var(--shadow-magenta);
+    }
+    .chat-log.role-shift .bubble:last-child {
+      animation: roleFlash .35s ease;
     }
     .bubble-head {
       display: flex;
@@ -2959,13 +3027,22 @@ def web_ui_html() -> str:
         overflow: auto;
       }
       .app {
-        width: calc(100vw - 10px);
-        margin: 5px auto;
-        gap: 10px;
+        width: 100vw;
+        margin: 0;
+        gap: 0;
+        min-height: 100dvh;
       }
-      .topbar, .toolbar, .chat-log, .composer, .sidebar {
+      .topbar, .toolbar, .chat-log, .composer {
         padding-left: 14px;
         padding-right: 14px;
+      }
+      .sidebar {
+        display: none;
+      }
+      .panel {
+        border-radius: 0;
+        border-left: 0;
+        border-right: 0;
       }
       .topbar {
         position: sticky;
@@ -2973,9 +3050,12 @@ def web_ui_html() -> str:
         z-index: 4;
         background: rgba(4, 6, 14, 0.88);
       }
+      .mobile-controls {
+        display: flex;
+      }
       .chat-log {
-        min-height: 48dvh;
-        max-height: 58dvh;
+        min-height: 56dvh;
+        max-height: none;
         padding-bottom: 120px;
       }
       .composer {
@@ -2996,6 +3076,23 @@ def web_ui_html() -> str:
       textarea {
         min-height: 80px;
       }
+      .astronaut {
+        background-position: 52% 14%;
+        background-size: min(180px, 44vw);
+        opacity: .55;
+      }
+      .planets::before {
+        width: 120px;
+        height: 120px;
+        top: 7%;
+        right: 8%;
+      }
+      .planets::after {
+        width: 72px;
+        height: 72px;
+        left: 6%;
+        bottom: 18%;
+      }
     }
   </style>
 </head>
@@ -3004,6 +3101,8 @@ def web_ui_html() -> str:
   <div class="stars"></div>
   <div class="nebula"></div>
   <div class="orbs"></div>
+  <div class="planets"></div>
+  <div class="astronaut"></div>
   <div class="app">
     <aside class="panel sidebar">
       <div class="brand">
@@ -3017,11 +3116,11 @@ def web_ui_html() -> str:
         <div class="slot-head"><span id="slotLabel">Key #1/20</span><span id="slotPercent">5%</span></div>
         <div class="slot-meter"><div class="slot-fill" id="slotFill"></div></div>
       </div>
-      <div class="field">
+      <div class="field" id="roleField">
         <label for="roleSelect">Роль</label>
         <select id="roleSelect"></select>
       </div>
-      <div class="field">
+      <div class="field model-active" id="modelField">
         <label for="modelSelect">Модель</label>
         <select id="modelSelect"></select>
       </div>
@@ -3042,6 +3141,7 @@ def web_ui_html() -> str:
       <div class="toolbar">
         <button class="ghost-btn" id="clearBtn">Очистить</button>
         <button class="ghost-btn" id="bottomBtn">Вниз</button>
+        <div class="mobile-controls" id="mobileControls"></div>
       </div>
       <div class="chat-log" id="chatLog"></div>
       <div class="composer">
@@ -3073,6 +3173,9 @@ def web_ui_html() -> str:
     const slotFill = document.getElementById('slotFill');
     const clearBtn = document.getElementById('clearBtn');
     const bottomBtn = document.getElementById('bottomBtn');
+    const roleField = document.getElementById('roleField');
+    const modelField = document.getElementById('modelField');
+    const mobileControls = document.getElementById('mobileControls');
     function esc(value) {
       return String(value || '')
         .replace(/&/g, '&amp;')
@@ -3111,6 +3214,50 @@ def web_ui_html() -> str:
       slotLabel.textContent = `Key #${active}/${total}`;
       slotPercent.textContent = `${pct}%`;
       slotFill.style.width = `${pct}%`;
+    }
+
+    function markModelActive() {
+      modelField.classList.add('model-active');
+      clearTimeout(markModelActive._timer);
+      markModelActive._timer = setTimeout(() => modelField.classList.remove('model-active'), 1400);
+    }
+
+    function roleTransition() {
+      chatLog.classList.remove('role-shift');
+      void chatLog.offsetWidth;
+      chatLog.classList.add('role-shift');
+      clearTimeout(roleTransition._timer);
+      roleTransition._timer = setTimeout(() => chatLog.classList.remove('role-shift'), 380);
+    }
+
+    function updateParallax(clientX, clientY) {
+      const cx = window.innerWidth / 2;
+      const cy = window.innerHeight / 2;
+      const dx = (clientX - cx) / cx;
+      const dy = (clientY - cy) / cy;
+      document.documentElement.style.setProperty('--mx', `${dx * 26}px`);
+      document.documentElement.style.setProperty('--my', `${dy * 20}px`);
+    }
+
+    function layoutControls() {
+      const mobile = window.matchMedia('(max-width: 720px)').matches;
+      if (mobile) {
+        if (!mobileControls.contains(roleField)) {
+          mobileControls.appendChild(roleField);
+        }
+        if (!mobileControls.contains(modelField)) {
+          mobileControls.appendChild(modelField);
+        }
+      } else {
+        const sidebar = document.querySelector('.sidebar');
+        const quickField = quickReplies.parentElement;
+        if (sidebar && roleField.parentElement !== sidebar) {
+          sidebar.insertBefore(roleField, quickField);
+        }
+        if (sidebar && modelField.parentElement !== sidebar) {
+          sidebar.insertBefore(modelField, quickField);
+        }
+      }
     }
 
     function selectedRoleTitle() {
@@ -3192,6 +3339,7 @@ def web_ui_html() -> str:
       if (state.config.defaultModelKey) {
         modelSelect.value = state.config.defaultModelKey;
       }
+      markModelActive();
     }
 
     function fillQuickReplies() {
@@ -3327,6 +3475,7 @@ def web_ui_html() -> str:
       fillModels();
       fillQuickReplies();
       updateSlot();
+      layoutControls();
       renderHistory();
       setStatus('Система готова');
     }
@@ -3345,6 +3494,16 @@ def web_ui_html() -> str:
       setStatus('Диалог очищен');
     });
     bottomBtn.addEventListener('click', () => { chatLog.scrollTop = chatLog.scrollHeight; });
+    roleSelect.addEventListener('change', roleTransition);
+    modelSelect.addEventListener('change', markModelActive);
+    window.addEventListener('resize', layoutControls);
+    window.addEventListener('mousemove', event => updateParallax(event.clientX, event.clientY), { passive: true });
+    window.addEventListener('touchmove', event => {
+      const touch = event.touches && event.touches[0];
+      if (touch) {
+        updateParallax(touch.clientX, touch.clientY);
+      }
+    }, { passive: true });
     boot();
   </script>
 </body>
