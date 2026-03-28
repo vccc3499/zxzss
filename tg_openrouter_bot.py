@@ -2464,6 +2464,8 @@ def web_ui_html() -> str:
       --radius: 28px;
       --mx: 0px;
       --my: 0px;
+      --ultra-cyan: rgba(0, 242, 255, 0.22);
+      --ultra-magenta: rgba(255, 0, 255, 0.18);
     }
     * { box-sizing: border-box; }
     html, body { min-height: 100%; }
@@ -2477,6 +2479,13 @@ def web_ui_html() -> str:
         radial-gradient(circle at 58% 72%, rgba(106, 125, 255, 0.20), transparent 22%),
         linear-gradient(180deg, #020309 0%, #050712 45%, #020309 100%);
       overflow: hidden;
+    }
+    body.ultra {
+      background:
+        radial-gradient(circle at 18% 18%, rgba(0, 242, 255, 0.34), transparent 18%),
+        radial-gradient(circle at 84% 16%, rgba(255, 0, 255, 0.30), transparent 18%),
+        radial-gradient(circle at 56% 76%, rgba(127, 141, 255, 0.28), transparent 24%),
+        linear-gradient(180deg, #010208 0%, #090317 44%, #020109 100%);
     }
     body::before {
       content: "";
@@ -2564,6 +2573,9 @@ def web_ui_html() -> str:
       border-radius: 50%;
       box-shadow: 0 0 30px rgba(255,0,255,.18), inset -26px -22px 60px rgba(0,0,0,.28);
     }
+    .planets {
+      transform: translate3d(calc(var(--mx) * .04), calc(var(--my) * .04), 0);
+    }
     .planets::before {
       width: 220px;
       height: 220px;
@@ -2585,6 +2597,29 @@ def web_ui_html() -> str:
         linear-gradient(135deg, rgba(125,40,255,.8), rgba(255,0,220,.68));
       transform: translate3d(calc(var(--mx) * .06), calc(var(--my) * .06), 0);
     }
+    .planet-ring {
+      position: absolute;
+      border-radius: 50%;
+      border: 2px solid rgba(210, 170, 255, .36);
+      box-shadow: 0 0 18px rgba(255,0,255,.18);
+      transform-style: preserve-3d;
+      animation: ringSpin 18s linear infinite;
+    }
+    .planet-ring.big {
+      width: 280px;
+      height: 72px;
+      top: 17%;
+      right: 6%;
+      transform: rotate(-18deg) translate3d(calc(var(--mx) * -.04), calc(var(--my) * -.04), 0);
+    }
+    .planet-ring.small {
+      width: 150px;
+      height: 40px;
+      left: 4%;
+      bottom: 19%;
+      transform: rotate(14deg) translate3d(calc(var(--mx) * .05), calc(var(--my) * .05), 0);
+      animation-duration: 12s;
+    }
     .astronaut {
       background-repeat: no-repeat;
       background-position: 14% 62%;
@@ -2594,6 +2629,20 @@ def web_ui_html() -> str:
       opacity: .9;
       transform: translate3d(calc(var(--mx) * -.08), calc(var(--my) * -.08), 0) rotate(-10deg);
       animation: astronautFloat 10s ease-in-out infinite;
+    }
+    .astronaut::after {
+      content: "";
+      position: absolute;
+      left: 9%;
+      top: 63%;
+      width: 140px;
+      height: 80px;
+      background:
+        linear-gradient(90deg, rgba(255,255,255,0), rgba(0,242,255,.22), rgba(255,0,255,.16), rgba(255,255,255,0));
+      filter: blur(14px);
+      transform: rotate(-16deg) translate3d(calc(var(--mx) * -.08), calc(var(--my) * -.08), 0);
+      opacity: .82;
+      animation: thrusterTrail 2.4s ease-in-out infinite;
     }
     @keyframes scanline {
       from { transform: translateY(0); }
@@ -2626,6 +2675,19 @@ def web_ui_html() -> str:
     @keyframes roleFlash {
       0% { opacity: 0; transform: scale(.96); }
       100% { opacity: 1; transform: scale(1); }
+    }
+    @keyframes ringSpin {
+      from { filter: drop-shadow(0 0 8px rgba(255,0,255,.22)); }
+      50% { filter: drop-shadow(0 0 18px rgba(0,242,255,.20)); }
+      to { filter: drop-shadow(0 0 8px rgba(255,0,255,.22)); }
+    }
+    @keyframes thrusterTrail {
+      0%, 100% { opacity: .45; width: 120px; }
+      50% { opacity: .88; width: 180px; }
+    }
+    @keyframes answerPulse {
+      0%, 100% { box-shadow: 0 0 18px rgba(0,242,255,.18), 0 0 8px rgba(255,0,255,.08); }
+      50% { box-shadow: 0 0 26px rgba(0,242,255,.30), 0 0 20px rgba(255,0,255,.18); }
     }
     .app {
       position: relative;
@@ -2693,6 +2755,12 @@ def web_ui_html() -> str:
       font-size: 11px;
       box-shadow: var(--shadow-magenta);
       white-space: nowrap;
+    }
+    .status-chip.active {
+      border-color: rgba(0,242,255,.42);
+      background: rgba(0,242,255,.10);
+      color: #d7ffff;
+      box-shadow: var(--shadow-cyan);
     }
     .slot-box {
       padding: 16px 18px;
@@ -2866,6 +2934,11 @@ def web_ui_html() -> str:
       gap: 10px;
       border-bottom: 1px solid rgba(0,242,255,.08);
     }
+    .ghost-btn.toggle-active {
+      border-color: rgba(255,0,255,.42);
+      box-shadow: var(--shadow-magenta);
+      color: #ffd9ff;
+    }
     .mobile-controls {
       display: none;
       width: 100%;
@@ -2919,6 +2992,10 @@ def web_ui_html() -> str:
       max-width: min(700px, 100%);
       border-color: rgba(255,0,255,.24);
       box-shadow: var(--shadow-magenta);
+    }
+    .bubble.generating {
+      animation: answerPulse 1.2s ease-in-out infinite;
+      border-color: rgba(0,242,255,.34);
     }
     .chat-log.role-shift .bubble:last-child {
       animation: roleFlash .35s ease;
@@ -3081,6 +3158,11 @@ def web_ui_html() -> str:
         background-size: min(180px, 44vw);
         opacity: .55;
       }
+      .astronaut::after {
+        left: 42%;
+        top: 18%;
+        width: 90px;
+      }
       .planets::before {
         width: 120px;
         height: 120px;
@@ -3093,6 +3175,18 @@ def web_ui_html() -> str:
         left: 6%;
         bottom: 18%;
       }
+      .planet-ring.big {
+        width: 160px;
+        height: 38px;
+        top: 11%;
+        right: 4%;
+      }
+      .planet-ring.small {
+        width: 94px;
+        height: 26px;
+        left: 4%;
+        bottom: 21%;
+      }
     }
   </style>
 </head>
@@ -3102,6 +3196,8 @@ def web_ui_html() -> str:
   <div class="nebula"></div>
   <div class="orbs"></div>
   <div class="planets"></div>
+  <div class="planet-ring big"></div>
+  <div class="planet-ring small"></div>
   <div class="astronaut"></div>
   <div class="app">
     <aside class="panel sidebar">
@@ -3110,7 +3206,7 @@ def web_ui_html() -> str:
           <h1 class="brand-title">AI BOT</h1>
           <div class="brand-sub">Живой космос · неоновый чат · роли · модели</div>
         </div>
-        <div class="status-chip">LIVE</div>
+        <div class="status-chip" id="ultraBadge">LIVE</div>
       </div>
       <div class="slot-box">
         <div class="slot-head"><span id="slotLabel">Key #1/20</span><span id="slotPercent">5%</span></div>
@@ -3141,6 +3237,7 @@ def web_ui_html() -> str:
       <div class="toolbar">
         <button class="ghost-btn" id="clearBtn">Очистить</button>
         <button class="ghost-btn" id="bottomBtn">Вниз</button>
+        <button class="ghost-btn" id="ultraBtn">ULTRA</button>
         <div class="mobile-controls" id="mobileControls"></div>
       </div>
       <div class="chat-log" id="chatLog"></div>
@@ -3173,9 +3270,12 @@ def web_ui_html() -> str:
     const slotFill = document.getElementById('slotFill');
     const clearBtn = document.getElementById('clearBtn');
     const bottomBtn = document.getElementById('bottomBtn');
+    const ultraBtn = document.getElementById('ultraBtn');
+    const ultraBadge = document.getElementById('ultraBadge');
     const roleField = document.getElementById('roleField');
     const modelField = document.getElementById('modelField');
     const mobileControls = document.getElementById('mobileControls');
+    let generatingBubble = null;
     function esc(value) {
       return String(value || '')
         .replace(/&/g, '&amp;')
@@ -3260,6 +3360,13 @@ def web_ui_html() -> str:
       }
     }
 
+    function setUltraMode(enabled) {
+      document.body.classList.toggle('ultra', enabled);
+      ultraBtn.classList.toggle('toggle-active', enabled);
+      ultraBadge.classList.toggle('active', enabled);
+      localStorage.setItem('ultraMode', enabled ? '1' : '0');
+    }
+
     function selectedRoleTitle() {
       const role = state.config.roles.find(item => item.id === roleSelect.value);
       return role ? role.title : 'AI';
@@ -3312,9 +3419,33 @@ def web_ui_html() -> str:
       chatLog.innerHTML = '';
       if (!state.history.length) {
         appendBubble('system', 'Выбери роль, модель и отправь первую задачу.', {});
-        return;
+      return;
       }
       state.history.forEach(item => appendBubble(item.kind, item.content, item.meta || {}));
+    }
+
+    function showGeneratingBubble(roleTitle) {
+      if (generatingBubble) {
+        generatingBubble.remove();
+      }
+      generatingBubble = document.createElement('section');
+      generatingBubble.className = 'bubble bot generating';
+      generatingBubble.innerHTML = `
+        <div class="bubble-head">
+          <div class="bubble-role">${esc(roleTitle || 'AI')}</div>
+          <div class="bubble-api">Генерация</div>
+        </div>
+        <div><p>Ответ собирается из модели, держу канал открытым.</p></div>
+      `;
+      chatLog.appendChild(generatingBubble);
+      chatLog.scrollTop = chatLog.scrollHeight;
+    }
+
+    function clearGeneratingBubble() {
+      if (generatingBubble) {
+        generatingBubble.remove();
+        generatingBubble = null;
+      }
     }
 
     function fillRoles() {
@@ -3387,6 +3518,7 @@ def web_ui_html() -> str:
       });
       persistHistory();
       renderHistory();
+      showGeneratingBubble(roleTitle);
       promptInput.value = '';
       sendBtn.disabled = true;
       let progress = 0;
@@ -3405,6 +3537,7 @@ def web_ui_html() -> str:
         });
         const data = await response.json();
         clearInterval(timer);
+        clearGeneratingBubble();
         if (!response.ok || !data.ok) {
           state.history.push({ kind: 'system', content: data && data.error ? data.error : `HTTP ${response.status}`, meta: {} });
           persistHistory();
@@ -3460,6 +3593,7 @@ def web_ui_html() -> str:
         setStatus('Ответ готов');
       } catch (error) {
         clearInterval(timer);
+        clearGeneratingBubble();
         state.history.push({ kind: 'system', content: `Сетевая ошибка: ${error && error.message ? error.message : String(error)}`, meta: {} });
         persistHistory();
         renderHistory();
@@ -3476,6 +3610,7 @@ def web_ui_html() -> str:
       fillQuickReplies();
       updateSlot();
       layoutControls();
+      setUltraMode(localStorage.getItem('ultraMode') === '1');
       renderHistory();
       setStatus('Система готова');
     }
@@ -3504,6 +3639,7 @@ def web_ui_html() -> str:
         updateParallax(touch.clientX, touch.clientY);
       }
     }, { passive: true });
+    ultraBtn.addEventListener('click', () => setUltraMode(!document.body.classList.contains('ultra')));
     boot();
   </script>
 </body>
