@@ -2345,6 +2345,7 @@ def build_web_config(bot_data: dict[str, Any]) -> dict[str, Any]:
                         providers=[provider_id],
                     )
                 )
+    web_models = [entry for entry in build_web_catalog(bot_data) if entry.get("type") == MODEL_TYPE_CHAT]
     preferred_key = preferred_chat_model_key(catalog)
     key_slot_active = max(1, int(os.getenv("KEY_SLOT_ACTIVE", "1") or "1"))
     key_slots_total = max(key_slot_active, int(os.getenv("KEY_SLOTS_TOTAL", "20") or "20"))
@@ -2355,13 +2356,18 @@ def build_web_config(bot_data: dict[str, Any]) -> dict[str, Any]:
         "defaultModelKey": preferred_key,
         "keySlotActive": key_slot_active,
         "keySlotsTotal": key_slots_total,
-        "roles": [{"id": role.role_id, "title": WEB_ROLE_TITLES.get(role.role_id, role.role_id)} for role in ROLE_SPECS],
-        "models": build_web_catalog(bot_data),
+        "availableChat": len(web_models),
+        "roles": [
+            {"id": role.role_id, "title": WEB_ROLE_TITLES.get(role.role_id, role.title)}
+            for role in ROLE_SPECS
+        ],
+        "models": web_models,
         "quickReplies": [
-            "Напиши продающее описание услуги",
-            "Разбери ошибку в коде",
-            "Составь план ремонта",
-            "Сделай оффер для Avito",
+            "Сделай продающее описание услуги",
+            "Разбери ошибку в коде и предложи фикс",
+            "Составь план ремонта под ключ",
+            "Напиши оффер для Avito",
+            "Сделай пошаговый план обучения",
         ],
     }
 
@@ -2436,233 +2442,290 @@ def web_ui_html() -> str:
 <html lang="ru">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>AI Bot Cyber UI</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <title>AI BOT</title>
+  <meta name="description" content="Живой неоновый чат с ролями и моделями на твоих ключах бесплатных нейросетей.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.11.1/styles/base16/synth-midnight-terminal-dark.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --bg: #050505;
-      --bg-soft: rgba(10, 10, 14, 0.92);
-      --glass: rgba(20, 20, 20, 0.8);
-      --glass-2: rgba(8, 8, 8, 0.72);
+      --panel: rgba(8, 10, 22, 0.66);
+      --panel-2: rgba(10, 14, 28, 0.82);
+      --line: rgba(0, 242, 255, 0.18);
+      --text: #ecffff;
+      --muted: rgba(214, 244, 255, 0.72);
       --cyan: #00f2ff;
-      --pink: #ff00ff;
-      --text: #d8fbff;
-      --muted: #7fd9e0;
-      --line: rgba(0, 242, 255, 0.22);
-      --danger: #ff4fd8;
-      --radius: 20px;
-      --shadow-cyan: 0 0 15px rgba(0, 242, 255, 0.55);
-      --shadow-pink: 0 0 15px rgba(255, 0, 255, 0.45);
+      --magenta: #ff00ff;
+      --electric: #7f8dff;
+      --good: #60ffb6;
+      --shadow-cyan: 0 0 22px rgba(0, 242, 255, 0.24);
+      --shadow-magenta: 0 0 28px rgba(255, 0, 255, 0.18);
+      --radius: 28px;
     }
     * { box-sizing: border-box; }
     html, body { min-height: 100%; }
     body {
       margin: 0;
-      font-family: "JetBrains Mono", "Courier New", monospace;
       color: var(--text);
+      font-family: "JetBrains Mono", monospace;
       background:
-        radial-gradient(circle at top left, rgba(0,242,255,0.12), transparent 28%),
-        radial-gradient(circle at top right, rgba(255,0,255,0.10), transparent 24%),
-        radial-gradient(circle at center, rgba(0,242,255,0.06), transparent 38%),
-        #050505;
-      overflow-x: hidden;
-      overflow-y: auto;
+        radial-gradient(circle at 14% 18%, rgba(0, 242, 255, 0.22), transparent 18%),
+        radial-gradient(circle at 84% 14%, rgba(255, 0, 255, 0.20), transparent 16%),
+        radial-gradient(circle at 58% 72%, rgba(106, 125, 255, 0.20), transparent 22%),
+        linear-gradient(180deg, #020309 0%, #050712 45%, #020309 100%);
+      overflow: hidden;
     }
     body::before {
       content: "";
       position: fixed;
       inset: 0;
       pointer-events: none;
-      background: repeating-linear-gradient(
-        to bottom,
-        rgba(255,255,255,0.03) 0,
-        rgba(255,255,255,0.03) 1px,
-        transparent 2px,
-        transparent 4px
-      );
-      opacity: 0.08;
-      mix-blend-mode: screen;
+      background-image:
+        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+      background-size: 90px 90px;
+      mask-image: radial-gradient(circle at center, black, transparent 82%);
+      opacity: 0.26;
     }
     body::after {
       content: "";
       position: fixed;
       left: 0;
       right: 0;
-      height: 140px;
-      top: -160px;
+      top: -30%;
+      height: 180px;
       pointer-events: none;
-      background: linear-gradient(180deg, rgba(0,242,255,0), rgba(0,242,255,0.12), rgba(255,0,255,0));
-      animation: scanline 9s linear infinite;
-      filter: blur(4px);
+      background: linear-gradient(180deg, rgba(0,242,255,0), rgba(0,242,255,0.13), rgba(255,0,255,0));
+      filter: blur(10px);
+      animation: scanline 10s linear infinite;
       opacity: 0.7;
+    }
+    .space, .stars, .nebula, .orbs {
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+    }
+    .space {
+      background:
+        radial-gradient(circle at 50% 50%, rgba(255,255,255,.12), transparent 40%),
+        radial-gradient(circle at 30% 70%, rgba(0,242,255,.12), transparent 24%),
+        radial-gradient(circle at 70% 28%, rgba(255,0,255,.10), transparent 20%);
+      filter: blur(30px);
+      opacity: 0.85;
+    }
+    .stars {
+      background-image:
+        radial-gradient(circle, rgba(255,255,255,.95) 0 1px, transparent 1.8px),
+        radial-gradient(circle, rgba(0,242,255,.9) 0 1px, transparent 2px),
+        radial-gradient(circle, rgba(255,0,255,.75) 0 1px, transparent 2px);
+      background-size: 220px 220px, 320px 320px, 420px 420px;
+      background-position: 0 0, 40px 80px, 120px 60px;
+      opacity: 0.6;
+      animation: drift 30s linear infinite;
+    }
+    .nebula {
+      background:
+        radial-gradient(circle at 22% 26%, rgba(0,242,255,.15), transparent 28%),
+        radial-gradient(circle at 78% 22%, rgba(255,0,255,.14), transparent 22%),
+        radial-gradient(circle at 60% 84%, rgba(106,125,255,.18), transparent 24%);
+      filter: blur(28px);
+      animation: floatNebula 18s ease-in-out infinite;
+    }
+    .orbs::before, .orbs::after {
+      content: "";
+      position: absolute;
+      width: 320px;
+      height: 320px;
+      border-radius: 50%;
+      filter: blur(60px);
+      opacity: 0.35;
+      animation: pulseOrb 8s ease-in-out infinite;
+    }
+    .orbs::before {
+      left: -80px;
+      top: 10%;
+      background: rgba(0, 242, 255, 0.18);
+    }
+    .orbs::after {
+      right: -80px;
+      bottom: 8%;
+      background: rgba(255, 0, 255, 0.16);
+      animation-delay: -4s;
     }
     @keyframes scanline {
       from { transform: translateY(0); }
-      to { transform: translateY(calc(100vh + 220px)); }
+      to { transform: translateY(calc(100vh + 260px)); }
     }
-    @keyframes breathe {
-      0%, 100% { box-shadow: 0 0 8px rgba(0,242,255,0.35), 0 0 18px rgba(0,242,255,0.18); opacity: 0.72; }
-      50% { box-shadow: 0 0 16px rgba(0,242,255,0.78), 0 0 28px rgba(255,0,255,0.22); opacity: 1; }
+    @keyframes drift {
+      from { transform: translate3d(0, 0, 0); }
+      to { transform: translate3d(-80px, 40px, 0); }
+    }
+    @keyframes floatNebula {
+      0%, 100% { transform: scale(1) translateY(0); }
+      50% { transform: scale(1.06) translateY(-12px); }
+    }
+    @keyframes pulseOrb {
+      0%, 100% { transform: scale(1); opacity: 0.3; }
+      50% { transform: scale(1.1); opacity: 0.52; }
     }
     @keyframes rise {
       from { opacity: 0; transform: translateY(18px); }
       to { opacity: 1; transform: translateY(0); }
     }
-    @keyframes floatGlow {
-      0%, 100% { transform: translate3d(0, 0, 0) scale(1); opacity: 0.35; }
-      50% { transform: translate3d(0, -8px, 0) scale(1.03); opacity: 0.6; }
-    }
-    @keyframes borderPulse {
+    @keyframes loadingGlow {
       0%, 100% { box-shadow: 0 0 12px rgba(0,242,255,0.18); }
-      50% { box-shadow: 0 0 22px rgba(255,0,255,0.18), 0 0 18px rgba(0,242,255,0.28); }
+      50% { box-shadow: 0 0 24px rgba(255,0,255,0.18), 0 0 20px rgba(0,242,255,0.3); }
     }
     .app {
       position: relative;
-      z-index: 1;
+      z-index: 2;
+      width: min(1320px, calc(100vw - 18px));
+      height: calc(100dvh - 18px);
+      margin: 9px auto;
       display: grid;
-      grid-template-columns: 320px 1fr;
-      gap: 18px;
-      width: min(1380px, calc(100vw - 24px));
-      min-height: calc(100dvh - 24px);
-      margin: 12px auto;
-    }
-    .app::before,
-    .app::after {
-      content: "";
-      position: fixed;
-      width: 280px;
-      height: 280px;
-      border-radius: 50%;
-      filter: blur(70px);
-      pointer-events: none;
-      z-index: -1;
-      animation: floatGlow 7s ease-in-out infinite;
-    }
-    .app::before {
-      top: 4vh;
-      left: 2vw;
-      background: rgba(0,242,255,0.12);
-    }
-    .app::after {
-      right: 3vw;
-      bottom: 10vh;
-      background: rgba(255,0,255,0.1);
-      animation-delay: -3.5s;
+      grid-template-columns: 340px 1fr;
+      gap: 16px;
     }
     .panel {
-      background: var(--glass);
-      border: 1px solid var(--line);
-      border-radius: 24px;
-      backdrop-filter: blur(10px);
-      box-shadow: var(--shadow-cyan);
       position: relative;
       overflow: hidden;
-      animation: borderPulse 5.5s ease-in-out infinite;
+      border-radius: var(--radius);
+      background: var(--panel);
+      border: 1px solid var(--line);
+      backdrop-filter: blur(20px);
+      box-shadow: var(--shadow-cyan);
     }
     .panel::before {
       content: "";
       position: absolute;
       inset: 0;
       pointer-events: none;
-      background: linear-gradient(135deg, rgba(0,242,255,0.05), transparent 45%, rgba(255,0,255,0.03));
+      background: linear-gradient(135deg, rgba(0,242,255,.07), transparent 46%, rgba(255,0,255,.07));
     }
     .sidebar {
       padding: 20px;
       display: grid;
-      grid-template-rows: auto auto auto 1fr;
+      grid-template-rows: auto auto auto 1fr auto;
       gap: 14px;
     }
     .brand {
       display: flex;
       justify-content: space-between;
-      align-items: flex-start;
       gap: 12px;
+      align-items: flex-start;
     }
-    .brand h1 {
+    .brand-title {
       margin: 0;
-      font-size: 30px;
-      letter-spacing: 0.08em;
+      font-family: "Orbitron", sans-serif;
+      font-size: clamp(30px, 3vw, 42px);
+      letter-spacing: 0.16em;
       color: var(--cyan);
-      text-shadow: 0 0 10px rgba(0,242,255,0.55);
+      text-shadow: 0 0 20px rgba(0,242,255,.44), 0 0 34px rgba(255,0,255,.14);
+      text-transform: uppercase;
     }
-    .brand small {
-      display: block;
-      margin-top: 6px;
+    .brand-sub {
+      margin-top: 10px;
       color: var(--muted);
-      line-height: 1.5;
+      font-size: 12px;
+      line-height: 1.8;
+      text-transform: uppercase;
+      letter-spacing: .18em;
     }
     .status-chip {
-      border: 1px solid rgba(255,0,255,0.45);
-      color: #ffd3ff;
-      padding: 8px 10px;
+      padding: 10px 12px;
       border-radius: 999px;
-      background: rgba(255,0,255,0.08);
-      box-shadow: var(--shadow-pink);
+      border: 1px solid rgba(255,0,255,.28);
+      background: rgba(255,0,255,.08);
+      color: #ffd0ff;
+      text-transform: uppercase;
+      letter-spacing: .18em;
+      font-size: 11px;
+      box-shadow: var(--shadow-magenta);
       white-space: nowrap;
-      font-size: 12px;
     }
-    .key-strip {
-      padding: 14px 16px;
-      background: var(--glass-2);
-      border: 1px solid rgba(0,242,255,0.18);
-      border-radius: 18px;
-      box-shadow: inset 0 0 0 1px rgba(255,0,255,0.08), var(--shadow-cyan);
+    .slot-box {
+      padding: 16px 18px;
+      border-radius: 24px;
+      background: var(--panel-2);
+      border: 1px solid rgba(0,242,255,.18);
+      box-shadow: inset 0 0 28px rgba(0,242,255,.05), var(--shadow-cyan);
     }
-    .key-head {
+    .slot-head {
       display: flex;
       justify-content: space-between;
+      gap: 12px;
       align-items: center;
-      margin-bottom: 10px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .key-bar {
-      height: 12px;
-      border-radius: 999px;
-      background: rgba(255,255,255,0.04);
-      overflow: hidden;
-      border: 1px solid rgba(0,242,255,0.22);
-      box-shadow: inset 0 0 16px rgba(0,242,255,0.08);
-    }
-    .key-bar-fill {
-      height: 100%;
-      width: 0%;
-      background: linear-gradient(90deg, var(--cyan), var(--pink));
-      box-shadow: 0 0 15px #00f2ff;
-      transition: width 0.35s ease;
-    }
-    .field {
-      display: grid;
-      gap: 7px;
-    }
-    .field label {
       color: var(--muted);
       font-size: 12px;
       text-transform: uppercase;
-      letter-spacing: 0.12em;
+      letter-spacing: .16em;
+    }
+    .slot-meter {
+      margin-top: 12px;
+      height: 12px;
+      border-radius: 999px;
+      overflow: hidden;
+      border: 1px solid rgba(0,242,255,.18);
+      background: rgba(255,255,255,.04);
+    }
+    .slot-fill {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--electric));
+      box-shadow: 0 0 18px rgba(0,242,255,.55);
+      transition: width .35s ease;
+    }
+    .field {
+      display: grid;
+      gap: 8px;
+    }
+    .field label {
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .22em;
     }
     select, textarea {
       width: 100%;
-      border-radius: 16px;
-      border: 1px solid rgba(0,242,255,0.26);
-      background: rgba(7, 7, 10, 0.78);
+      border-radius: 20px;
+      border: 1px solid rgba(0,242,255,.2);
+      background: rgba(6, 8, 18, 0.88);
       color: var(--text);
       font: inherit;
-      padding: 14px 15px;
       outline: none;
-      box-shadow: inset 0 0 14px rgba(0,242,255,0.04);
+      padding: 14px 16px;
+      box-shadow: inset 0 0 24px rgba(0,242,255,.04);
     }
     select:focus, textarea:focus {
-      box-shadow: 0 0 15px #00f2ff, inset 0 0 14px rgba(0,242,255,0.07);
-      border-color: rgba(0,242,255,0.7);
+      border-color: rgba(0,242,255,.44);
+      box-shadow: 0 0 20px rgba(0,242,255,.18), 0 0 28px rgba(255,0,255,.10), inset 0 0 28px rgba(0,242,255,.08);
     }
-    textarea {
-      min-height: 96px;
-      resize: none;
+    .mini-grid {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr 1fr;
+    }
+    .mini {
+      padding: 14px;
+      border-radius: 20px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(255,255,255,.03);
+    }
+    .mini b {
+      display: block;
+      font-size: 22px;
+      color: var(--cyan);
+      text-shadow: 0 0 16px rgba(0,242,255,.34);
+    }
+    .mini span {
+      display: block;
+      margin-top: 8px;
+      color: var(--muted);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .16em;
     }
     .quick-list {
       display: flex;
@@ -2672,20 +2735,21 @@ def web_ui_html() -> str:
     }
     .quick-btn, .ghost-btn, .send-btn {
       font: inherit;
-      border-radius: 14px;
-      padding: 10px 12px;
       cursor: pointer;
-      transition: 0.22s ease;
+      transition: .2s ease;
     }
     .quick-btn, .ghost-btn {
-      background: rgba(0,0,0,0.28);
+      border-radius: 999px;
+      padding: 10px 12px;
+      border: 1px solid rgba(255,255,255,.1);
+      background: rgba(255,255,255,.04);
       color: var(--text);
-      border: 1px solid rgba(0,242,255,0.28);
     }
     .quick-btn:hover, .ghost-btn:hover {
       transform: translateY(-1px);
-      box-shadow: 0 0 15px #00f2ff;
-      border-color: rgba(0,242,255,0.72);
+      border-color: rgba(0,242,255,.38);
+      box-shadow: var(--shadow-cyan);
+      color: var(--cyan);
     }
     .chat-shell {
       display: grid;
@@ -2693,71 +2757,78 @@ def web_ui_html() -> str:
       min-height: 0;
     }
     .topbar {
-      padding: 18px 22px 10px;
+      padding: 18px 22px 14px;
       display: flex;
       justify-content: space-between;
       align-items: center;
       gap: 14px;
-      border-bottom: 1px solid rgba(0,242,255,0.12);
+      border-bottom: 1px solid rgba(0,242,255,.10);
     }
     .topbar h2 {
       margin: 0;
-      color: var(--cyan);
-      font-size: 22px;
-      text-shadow: 0 0 10px rgba(0,242,255,0.35);
+      font-family: "Orbitron", sans-serif;
+      font-size: clamp(24px, 2.6vw, 38px);
+      letter-spacing: .14em;
+      text-transform: uppercase;
+      color: #f9ffff;
+      text-shadow: 0 0 20px rgba(0,242,255,.35), 0 0 32px rgba(255,0,255,.16);
     }
     .subtitle {
-      margin-top: 6px;
+      margin-top: 8px;
       color: var(--muted);
-      font-size: 13px;
+      font-size: 12px;
+      letter-spacing: .18em;
+      text-transform: uppercase;
     }
-    .api-live {
+    .session {
       display: inline-flex;
       align-items: center;
       gap: 10px;
       padding: 10px 14px;
       border-radius: 999px;
-      border: 1px solid rgba(0,242,255,0.35);
-      background: rgba(0,0,0,0.32);
+      border: 1px solid rgba(0,242,255,.26);
+      background: rgba(255,255,255,.04);
       box-shadow: var(--shadow-cyan);
-      animation: breathe 2.2s ease-in-out infinite;
+      animation: loadingGlow 3s ease-in-out infinite;
       color: var(--text);
       font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .14em;
     }
-    .api-dot {
+    .dot {
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background: var(--cyan);
-      box-shadow: 0 0 15px #00f2ff;
+      background: var(--good);
+      box-shadow: 0 0 16px rgba(93,255,177,.8);
     }
     .toolbar {
+      padding: 14px 22px;
       display: flex;
       flex-wrap: wrap;
       gap: 10px;
-      padding: 12px 22px 16px;
-      border-bottom: 1px solid rgba(0,242,255,0.08);
+      border-bottom: 1px solid rgba(0,242,255,.08);
     }
     .chat-log {
+      min-height: 0;
       overflow: auto;
-      padding: 20px 22px;
+      padding: 18px 22px;
       display: flex;
       flex-direction: column;
       gap: 16px;
-      min-height: 0;
     }
     .bubble {
       position: relative;
-      max-width: min(860px, 88%);
+      max-width: min(900px, 88%);
       padding: 16px 18px;
-      border-radius: 20px;
-      border: 1px solid rgba(0,242,255,0.22);
-      background: rgba(20, 20, 20, 0.8);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 0 15px rgba(0,242,255,0.18);
-      animation: rise 0.28s ease;
-      line-height: 1.65;
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,.08);
+      background: rgba(10, 12, 24, 0.74);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 0 22px rgba(0,242,255,.10);
+      animation: rise .24s ease;
       overflow-wrap: anywhere;
+      line-height: 1.72;
     }
     .bubble::after {
       content: "";
@@ -2765,93 +2836,71 @@ def web_ui_html() -> str:
       inset: 0;
       border-radius: inherit;
       pointer-events: none;
-      background: linear-gradient(135deg, rgba(0,242,255,0.08), transparent 42%, rgba(255,0,255,0.06));
-      opacity: 0.7;
+      background: linear-gradient(135deg, rgba(0,242,255,.08), transparent 44%, rgba(255,0,255,.08));
+      opacity: .8;
     }
     .bubble.user {
       align-self: flex-end;
-      border-color: rgba(0,242,255,0.38);
-      box-shadow: 0 0 15px rgba(0,242,255,0.22);
+      border-color: rgba(0,242,255,.26);
+      box-shadow: 0 0 24px rgba(0,242,255,.12);
     }
     .bubble.bot {
       align-self: flex-start;
-      border-color: rgba(255,0,255,0.18);
-      box-shadow: 0 0 15px rgba(0,242,255,0.12);
+      border-color: rgba(255,0,255,.16);
+      box-shadow: 0 0 22px rgba(255,0,255,.08);
     }
     .bubble.system {
       align-self: center;
-      max-width: min(760px, 100%);
-      border-color: rgba(255,0,255,0.34);
-      box-shadow: var(--shadow-pink);
+      max-width: min(700px, 100%);
+      border-color: rgba(255,0,255,.24);
+      box-shadow: var(--shadow-magenta);
     }
     .bubble-head {
       display: flex;
       justify-content: space-between;
-      align-items: center;
       gap: 12px;
-      margin-bottom: 10px;
-      font-size: 12px;
-      color: var(--muted);
-    }
-    .bubble-role {
-      color: var(--cyan);
-      text-shadow: 0 0 6px rgba(0,242,255,0.35);
-    }
-    .bubble-api {
-      display: inline-flex;
       align-items: center;
-      gap: 8px;
+      margin-bottom: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .16em;
+    }
+    .bubble-role { color: var(--cyan); }
+    .bubble-api {
       padding: 6px 10px;
       border-radius: 999px;
-      border: 1px solid rgba(0,242,255,0.24);
-      background: rgba(0,0,0,0.28);
-      box-shadow: 0 0 10px rgba(0,242,255,0.18);
+      border: 1px solid rgba(0,242,255,.16);
+      background: rgba(255,255,255,.03);
     }
+    .bubble p { margin: 0; }
+    .bubble ul { margin: 10px 0 0; padding-left: 18px; }
     .bubble pre {
-      background: rgba(0, 0, 0, 0.74);
-      border: 1px solid rgba(0,242,255,0.22);
-      border-radius: 14px;
+      margin: 12px 0 0;
+      border-radius: 16px;
+      border: 1px solid rgba(0,242,255,.16);
+      background: rgba(0,0,0,.34);
       padding: 14px;
       overflow: auto;
-      box-shadow: inset 0 0 18px rgba(0,242,255,0.06);
+      box-shadow: inset 0 0 18px rgba(0,242,255,.05);
     }
-    .bubble code {
-      font-family: "JetBrains Mono", "Courier New", monospace;
-    }
-    .code-wrap {
-      margin: 12px 0 0;
-      border: 1px solid rgba(0,242,255,0.22);
-      border-radius: 14px;
-      overflow: hidden;
-      box-shadow: inset 0 0 18px rgba(0,242,255,0.05);
-    }
-    .code-label {
-      padding: 8px 12px;
-      font-size: 12px;
-      color: var(--muted);
-      border-bottom: 1px solid rgba(0,242,255,0.14);
-      background: rgba(0,242,255,0.04);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-    }
-    .bubble ul {
-      margin: 10px 0 0;
-      padding-left: 20px;
-    }
-    .bubble p {
-      margin: 0;
+    .bubble code, .meta-block {
+      font-family: "JetBrains Mono", monospace;
     }
     .composer {
       padding: 16px 22px 22px;
-      border-top: 1px solid rgba(0,242,255,0.12);
       display: grid;
       gap: 12px;
-      background: rgba(5, 5, 5, 0.45);
+      border-top: 1px solid rgba(0,242,255,.1);
+      background: rgba(3, 5, 12, 0.38);
+      backdrop-filter: blur(14px);
     }
-    .status-line {
-      color: var(--muted);
+    .status {
       min-height: 18px;
-      font-size: 13px;
+      color: var(--muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: .16em;
     }
     .composer-row {
       display: grid;
@@ -2859,51 +2908,60 @@ def web_ui_html() -> str:
       gap: 12px;
       align-items: end;
     }
+    textarea {
+      min-height: 90px;
+      resize: none;
+    }
     .send-btn {
-      min-width: 168px;
+      min-width: 176px;
       height: 54px;
-      background: transparent;
-      color: var(--cyan);
-      border: 1px solid rgba(0,242,255,0.48);
-      box-shadow: var(--shadow-cyan);
+      border-radius: 20px;
+      border: 1px solid rgba(0,242,255,.36);
+      background: linear-gradient(135deg, rgba(0,242,255,.14), rgba(255,0,255,.14));
+      color: var(--text);
       text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: .16em;
+      box-shadow: 0 0 18px rgba(0,242,255,.2), 0 0 22px rgba(255,0,255,.12);
     }
     .send-btn:hover {
-      color: white;
       transform: translateY(-1px);
-      background: rgba(0,242,255,0.08);
-      box-shadow: 0 0 18px #00f2ff;
+      box-shadow: 0 0 22px rgba(0,242,255,.32), 0 0 26px rgba(255,0,255,.18);
     }
     .send-btn:disabled {
-      opacity: 0.55;
+      opacity: 0.6;
       cursor: wait;
     }
+    .meta-block {
+      margin-top: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      white-space: pre-wrap;
+    }
     @media (max-width: 1100px) {
+      body {
+        overflow: auto;
+      }
       .app {
         grid-template-columns: 1fr;
-        min-height: calc(100vh - 24px);
+        height: auto;
+        min-height: calc(100dvh - 18px);
+      }
+      .sidebar {
+        order: 2;
       }
       .chat-shell {
-        min-height: 70vh;
+        order: 1;
+        min-height: calc(100dvh - 18px);
       }
     }
     @media (max-width: 720px) {
       body {
-        padding-bottom: 0;
+        overflow: auto;
       }
       .app {
-        width: calc(100vw - 14px);
-        margin: 7px auto;
-        gap: 12px;
-        min-height: calc(100dvh - 14px);
-      }
-      .chat-shell {
-        order: 1;
-        min-height: calc(100dvh - 14px);
-      }
-      .sidebar {
-        order: 2;
+        width: calc(100vw - 10px);
+        margin: 5px auto;
+        gap: 10px;
       }
       .topbar, .toolbar, .chat-log, .composer, .sidebar {
         padding-left: 14px;
@@ -2913,35 +2971,21 @@ def web_ui_html() -> str:
         position: sticky;
         top: 0;
         z-index: 4;
-        background: rgba(5, 5, 5, 0.86);
-        backdrop-filter: blur(10px);
-      }
-      .toolbar {
-        overflow-x: auto;
-        flex-wrap: nowrap;
-        scrollbar-width: none;
-      }
-      .toolbar::-webkit-scrollbar {
-        display: none;
+        background: rgba(4, 6, 14, 0.88);
       }
       .chat-log {
-        min-height: 42dvh;
-        max-height: 52dvh;
+        min-height: 48dvh;
+        max-height: 58dvh;
         padding-bottom: 120px;
       }
       .composer {
         position: sticky;
         bottom: 0;
         z-index: 5;
-        background: rgba(5, 5, 5, 0.94);
-        backdrop-filter: blur(12px);
-        border-top: 1px solid rgba(0,242,255,0.2);
+        background: rgba(3, 5, 12, 0.92);
       }
       .composer-row {
         grid-template-columns: 1fr;
-      }
-      textarea {
-        min-height: 82px;
       }
       .send-btn {
         width: 100%;
@@ -2949,63 +2993,40 @@ def web_ui_html() -> str:
       .bubble {
         max-width: 100%;
       }
-      .quick-list {
-        max-height: 160px;
-        overflow: auto;
-        padding-right: 4px;
-      }
-    }
-    @media (max-width: 520px) {
-      .brand {
-        flex-direction: column;
-        align-items: flex-start;
-      }
-      .brand h1 {
-        font-size: 24px;
-      }
-      .status-chip,
-      .api-live,
-      .ghost-btn,
-      .quick-btn {
-        font-size: 11px;
-      }
-      .bubble {
-        padding: 14px 14px;
+      textarea {
+        min-height: 80px;
       }
     }
   </style>
 </head>
 <body>
+  <div class="space"></div>
+  <div class="stars"></div>
+  <div class="nebula"></div>
+  <div class="orbs"></div>
   <div class="app">
     <aside class="panel sidebar">
       <div class="brand">
         <div>
-          <h1>AI BOT</h1>
-          <small>Cyberpunk dark neon console for multi-provider chat, code and media workflows.</small>
+          <h1 class="brand-title">AI BOT</h1>
+          <div class="brand-sub">Живой космос · неоновый чат · роли · модели</div>
         </div>
-        <div class="status-chip">SYNTH MODE</div>
+        <div class="status-chip">LIVE</div>
       </div>
-
-      <div class="key-strip">
-        <div class="key-head">
-          <span id="keyLabel">Key #1/20</span>
-          <span id="keyPercent">5%</span>
-        </div>
-        <div class="key-bar"><div class="key-bar-fill" id="keyBarFill"></div></div>
+      <div class="slot-box">
+        <div class="slot-head"><span id="slotLabel">Key #1/20</span><span id="slotPercent">5%</span></div>
+        <div class="slot-meter"><div class="slot-fill" id="slotFill"></div></div>
       </div>
-
       <div class="field">
-        <label for="roleSelect">ROLE</label>
+        <label for="roleSelect">Роль</label>
         <select id="roleSelect"></select>
       </div>
-
       <div class="field">
-        <label for="modelSelect">MODEL</label>
+        <label for="modelSelect">Модель</label>
         <select id="modelSelect"></select>
       </div>
-
       <div class="field">
-        <label>QUICK REPLIES</label>
+        <label>Быстрые задачи</label>
         <div class="quick-list" id="quickReplies"></div>
       </div>
     </aside>
@@ -3013,39 +3034,32 @@ def web_ui_html() -> str:
     <main class="panel chat-shell">
       <div class="topbar">
         <div>
-          <h2>Cyber Console</h2>
-          <div class="subtitle">Code highlighting, provider telemetry, neon response cards.</div>
+          <h2>Cosmic Chat</h2>
+          <div class="subtitle">Минимум текста · максимум живых эффектов · один живой чат</div>
         </div>
-        <div class="api-live" id="sessionBadge">
-          <span class="api-dot"></span>
-          <span>API READY</span>
-        </div>
+        <div class="session" id="sessionBadge"><span class="dot"></span><span>API READY</span></div>
       </div>
-
       <div class="toolbar">
-        <button class="ghost-btn" id="clearHistoryBtn">Clear history</button>
-        <button class="ghost-btn" id="scrollBottomBtn">Scroll to bottom</button>
+        <button class="ghost-btn" id="clearBtn">Очистить</button>
+        <button class="ghost-btn" id="bottomBtn">Вниз</button>
       </div>
-
       <div class="chat-log" id="chatLog"></div>
-
       <div class="composer">
-        <div class="status-line" id="statusLine">Stand by. Select role, select model, send task.</div>
+        <div class="status" id="statusLine">Система готова</div>
         <div class="composer-row">
-          <textarea id="promptInput" placeholder="Task: code, diagnostics, ad copy, analysis, plan, listing..."></textarea>
-          <button class="send-btn" id="sendBtn">Send signal</button>
+          <textarea id="promptInput" placeholder="Напиши задачу: код, оффер, ремонт, стратегия, контент, анализ..."></textarea>
+          <button class="send-btn" id="sendBtn">Отправить</button>
         </div>
       </div>
     </main>
   </div>
 
   <script>
-    const EMBEDDED_CONFIG = __CONFIG_JSON__;
+    const CONFIG = __CONFIG_JSON__;
     const state = {
-      config: null,
-      history: JSON.parse(localStorage.getItem('webHistory') || '[]')
+      history: JSON.parse(localStorage.getItem('webHistory') || '[]'),
+      config: CONFIG,
     };
-
     const roleSelect = document.getElementById('roleSelect');
     const modelSelect = document.getElementById('modelSelect');
     const promptInput = document.getElementById('promptInput');
@@ -3054,253 +3068,288 @@ def web_ui_html() -> str:
     const chatLog = document.getElementById('chatLog');
     const statusLine = document.getElementById('statusLine');
     const sessionBadge = document.getElementById('sessionBadge');
-    const keyLabel = document.getElementById('keyLabel');
-    const keyPercent = document.getElementById('keyPercent');
-    const keyBarFill = document.getElementById('keyBarFill');
-    const clearHistoryBtn = document.getElementById('clearHistoryBtn');
-    const scrollBottomBtn = document.getElementById('scrollBottomBtn');
+    const slotLabel = document.getElementById('slotLabel');
+    const slotPercent = document.getElementById('slotPercent');
+    const slotFill = document.getElementById('slotFill');
+    const clearBtn = document.getElementById('clearBtn');
+    const bottomBtn = document.getElementById('bottomBtn');
+    function esc(value) {
+      return String(value || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
 
-    function renderMarkdownLite(input) {
+    function renderRichText(input) {
       const source = String(input || '');
       const codeBlocks = [];
       const protectedText = source.replace(/```(\w+)?\n?([\s\S]*?)```/g, (_, lang, code) => {
-        const token = `@@CODEBLOCK_${codeBlocks.length}@@`;
-        codeBlocks.push({
-          lang: (lang || 'code').trim(),
-          code: escapeHtml(code.trim())
-        });
+        const token = `@@CODE_${codeBlocks.length}@@`;
+        codeBlocks.push({ code: esc(code.trim()) });
         return token;
       });
-
-      const paragraphs = protectedText.split(/\n\n+/).map(chunk => chunk.trim()).filter(Boolean);
-      const rendered = paragraphs.map(chunk => {
+      const parts = protectedText.split(/\n\n+/).map(chunk => chunk.trim()).filter(Boolean).map(chunk => {
         const lines = chunk.split('\n');
-        const isList = lines.every(line => /^(-|\*)\s+/.test(line.trim()));
-        if (isList) {
-          const items = lines.map(line => `<li>${escapeHtml(line.replace(/^(-|\*)\s+/, ''))}</li>`).join('');
-          return `<ul>${items}</ul>`;
+        if (lines.every(line => /^(-|\*)\s+/.test(line.trim()))) {
+          return '<ul>' + lines.map(line => `<li>${esc(line.replace(/^(-|\*)\s+/, ''))}</li>`).join('') + '</ul>';
         }
-        let html = escapeHtml(chunk)
-          .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-          .replace(/`([^`]+)`/g, '<code>$1</code>')
-          .replace(/\n/g, '<br>');
-        return `<p>${html}</p>`;
+        return `<p>${esc(chunk).replace(/\n/g, '<br>')}</p>`;
       }).join('');
-
-      let finalHtml = rendered;
-      codeBlocks.forEach((block, idx) => {
-        const markup = `<div class="code-wrap"><div class="code-label">${block.lang}</div><pre><code>${block.code}</code></pre></div>`;
-        finalHtml = finalHtml.replace(`@@CODEBLOCK_${idx}@@`, markup);
-      });
-      return finalHtml;
+      return parts.replace(/@@CODE_(\d+)@@/g, (_, index) => `<pre><code>${codeBlocks[Number(index)].code}</code></pre>`);
     }
 
-    function saveHistory() {
-      localStorage.setItem('webHistory', JSON.stringify(state.history.slice(-20)));
+    function persistHistory() {
+      localStorage.setItem('webHistory', JSON.stringify(state.history.slice(-24)));
     }
 
-    function escapeHtml(value) {
-      return String(value)
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+    function updateSlot() {
+      const total = Number(state.config.keySlotsTotal || 20) || 20;
+      const active = Number(state.config.keySlotActive || 1) || 1;
+      const pct = Math.min(100, Math.max(1, Math.round((active / total) * 100)));
+      slotLabel.textContent = `Key #${active}/${total}`;
+      slotPercent.textContent = `${pct}%`;
+      slotFill.style.width = `${pct}%`;
     }
 
-    function roleLabel(role) {
-      if (role === 'user') return 'USER';
-      if (role === 'system') return 'SYSTEM';
-      return 'BOT';
+    function selectedRoleTitle() {
+      const role = state.config.roles.find(item => item.id === roleSelect.value);
+      return role ? role.title : 'AI';
     }
 
-    function bubbleHtml(item) {
-      const kind = item.kind || (item.role === 'user' ? 'user' : 'bot');
-      const body = item.role === 'user'
-        ? escapeHtml(item.content).replace(/\n/g, '<br>')
-        : renderMarkdownLite(item.content || '');
-      const providerMeta = item.providerTitle
-        ? `<span class="bubble-api">API ${escapeHtml(item.providerTitle)} | ${escapeHtml(item.modelId || '')}</span>`
-        : '';
-      return `
-        <article class="bubble ${kind}">
-          <div class="bubble-head">
-            <span class="bubble-role">${roleLabel(item.role)}</span>
-            ${providerMeta}
-          </div>
-          <div class="bubble-body">${body}</div>
-        </article>
-      `;
+    function selectedModel() {
+      return state.config.models.find(item => item.key === modelSelect.value) || state.config.models[0] || null;
     }
 
-    function renderHistory() {
-      chatLog.innerHTML = state.history.map(bubbleHtml).join('');
+    function setStatus(text) {
+      statusLine.textContent = text;
+    }
+
+    function updateSession(meta) {
+      if (!meta || !meta.providerTitle) {
+        sessionBadge.innerHTML = '<span class="dot"></span><span>API READY</span>';
+        return;
+      }
+      sessionBadge.innerHTML = `<span class="dot"></span><span>${esc(meta.providerTitle)}${meta.modelId ? ' · ' + esc(meta.modelId) : ''}</span>`;
+    }
+
+    function appendBubble(kind, content, meta) {
+      const bubble = document.createElement('section');
+      bubble.className = `bubble ${kind}`;
+      const head = document.createElement('div');
+      head.className = 'bubble-head';
+      const left = document.createElement('div');
+      left.className = 'bubble-role';
+      left.textContent = kind === 'user' ? 'Ты' : kind === 'bot' ? (meta && meta.roleTitle ? meta.roleTitle : 'AI') : 'Система';
+      const right = document.createElement('div');
+      right.className = 'bubble-api';
+      right.textContent = meta && meta.providerTitle ? `${meta.providerTitle}${meta.modelId ? ' · ' + meta.modelId : ''}` : (kind === 'user' ? 'Ввод' : 'Статус');
+      head.appendChild(left);
+      head.appendChild(right);
+      bubble.appendChild(head);
+      const body = document.createElement('div');
+      body.innerHTML = kind === 'user' ? `<p>${esc(content)}</p>` : renderRichText(content);
+      bubble.appendChild(body);
+      if (meta && Array.isArray(meta.metadataLines) && meta.metadataLines.length) {
+        const footer = document.createElement('div');
+        footer.className = 'meta-block';
+        footer.textContent = meta.metadataLines.join('\n');
+        bubble.appendChild(footer);
+      }
+      chatLog.appendChild(bubble);
       chatLog.scrollTop = chatLog.scrollHeight;
     }
 
-    function setKeyStatus(active, total) {
-      const safeActive = Math.max(1, Number(active || 1));
-      const safeTotal = Math.max(safeActive, Number(total || 20));
-      const percent = Math.max(1, Math.min(100, Math.round((safeActive / safeTotal) * 100)));
-      keyLabel.textContent = `Key #${safeActive}/${safeTotal}`;
-      keyPercent.textContent = `${percent}%`;
-      keyBarFill.style.width = `${percent}%`;
+    function renderHistory() {
+      chatLog.innerHTML = '';
+      if (!state.history.length) {
+        appendBubble('system', 'Выбери роль, модель и отправь первую задачу.', {});
+        return;
+      }
+      state.history.forEach(item => appendBubble(item.kind, item.content, item.meta || {}));
     }
 
-    function fillConfig(config) {
-      state.config = config;
-      roleSelect.innerHTML = config.roles
-        .map(role => `<option value="${role.id}">${escapeHtml(role.title)}</option>`)
-        .join('');
-      modelSelect.innerHTML = config.models
-        .filter(model => model.type === 'chat')
-        .map(model => `<option value="${model.key}">${escapeHtml(model.label)}</option>`)
-        .join('');
-      roleSelect.value = config.defaultRoleId || 'general';
-      if (config.defaultModelKey) {
-        modelSelect.value = config.defaultModelKey;
+    function fillRoles() {
+      roleSelect.innerHTML = '';
+      state.config.roles.forEach(role => {
+        const option = document.createElement('option');
+        option.value = role.id;
+        option.textContent = role.title;
+        roleSelect.appendChild(option);
+      });
+      roleSelect.value = state.config.defaultRoleId || state.config.roles[0]?.id || 'general';
+    }
+
+    function fillModels() {
+      modelSelect.innerHTML = '';
+      state.config.models.forEach(model => {
+        const option = document.createElement('option');
+        option.value = model.key;
+        option.textContent = `${model.modelId || model.label} · ${model.providerTitle || ''}`;
+        modelSelect.appendChild(option);
+      });
+      if (state.config.defaultModelKey) {
+        modelSelect.value = state.config.defaultModelKey;
       }
-      setKeyStatus(config.keySlotActive, config.keySlotsTotal);
+    }
+
+    function fillQuickReplies() {
       quickReplies.innerHTML = '';
-      config.quickReplies.forEach(text => {
-        const btn = document.createElement('button');
-        btn.className = 'quick-btn';
-        btn.textContent = text;
-        btn.addEventListener('click', () => {
+      (state.config.quickReplies || []).slice(0, 5).forEach(text => {
+        const button = document.createElement('button');
+        button.className = 'quick-btn';
+        button.textContent = text;
+        button.onclick = () => {
           promptInput.value = text;
           promptInput.focus();
-        });
-        quickReplies.appendChild(btn);
+        };
+        quickReplies.appendChild(button);
       });
     }
 
-    function pushSystemMessage(content) {
-      state.history.push({
-        role: 'system',
-        kind: 'system',
-        content,
-        providerTitle: 'SYSTEM',
-        modelId: 'UI'
-      });
-      saveHistory();
-      renderHistory();
-    }
-
-    async function boot() {
-      try {
-        const config = EMBEDDED_CONFIG;
-        fillConfig(config);
-        if (!config.models || !config.models.length) {
-          pushSystemMessage('**No models loaded.** Backend returned an empty model catalog. Check provider keys and server logs.');
-          statusLine.textContent = 'No models available from backend.';
-          return;
-        }
-        if (!state.history.length) {
-          pushSystemMessage('**System online.** Select role, select model, then send your task.\\n\\nSupports code, neat lists, metadata cards and provider telemetry.');
-        } else {
-          renderHistory();
-        }
-      } catch (err) {
-        const message = err && err.message ? err.message : 'Config load failed';
-        pushSystemMessage(`**Boot error:** ${message}`);
-        statusLine.textContent = `Boot error: ${message}`;
-      }
-    }
-
-    async function sendMessage() {
-      const message = promptInput.value.trim();
-      if (!message) return;
-
-      const payload = {
+    function buildPayload(message) {
+      return {
         message,
-        roleId: roleSelect.value,
-        selectedModelKey: modelSelect.value,
-        history: state.history
-          .filter(item => item.role === 'user' || item.role === 'assistant')
-          .map(item => ({ role: item.role, content: item.content }))
+        roleId: roleSelect.value || state.config.defaultRoleId || 'general',
+        selectedModelKey: modelSelect.value || state.config.defaultModelKey || '',
+        history: state.history.filter(item => item.kind === 'user' || item.kind === 'bot').map(item => ({
+          role: item.kind === 'bot' ? 'assistant' : 'user',
+          content: item.content
+        })),
       };
+    }
 
-      state.history.push({ role: 'user', kind: 'user', content: message });
-      promptInput.value = '';
-      saveHistory();
+    async function sendPrompt() {
+      const message = promptInput.value.trim();
+      if (!message) {
+        setStatus('Введите задачу');
+        return;
+      }
+      const model = selectedModel();
+      const roleTitle = selectedRoleTitle();
+      state.history.push({
+        kind: 'user',
+        content: message,
+        meta: {
+          providerTitle: model ? model.providerTitle : 'INPUT',
+          modelId: model ? (model.modelId || '') : '',
+          roleTitle
+        }
+      });
+      persistHistory();
       renderHistory();
-
-      statusLine.textContent = 'Generating... [----------] 0%';
-      sessionBadge.innerHTML = '<span class="api-dot"></span><span>API ACTIVE</span>';
+      promptInput.value = '';
       sendBtn.disabled = true;
-
       let progress = 0;
-      const progressTimer = setInterval(() => {
-        progress = Math.min(progress + 11, 94);
-        const filled = Math.max(0, Math.min(10, Math.round(progress / 10)));
-        statusLine.textContent = `Generating... [${'#'.repeat(filled)}${'-'.repeat(10 - filled)}] ${progress}%`;
-      }, 650);
-
+      setStatus('Генерирую... [░░░░░░░░░░] 0%');
+      const timer = setInterval(() => {
+        progress = Math.min(96, progress + 12);
+        const filled = Math.min(10, Math.floor(progress / 10));
+        const bar = '█'.repeat(filled) + '░'.repeat(10 - filled);
+        setStatus(`Генерирую... [${bar}] ${progress}%`);
+      }, 360);
       try {
-        const res = await fetch('/api/chat', {
+        const response = await fetch('/api/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(buildPayload(message))
         });
-        const data = await res.json();
-        clearInterval(progressTimer);
-        if (!data.ok) {
-          throw new Error(data.error || 'Response error');
+        const data = await response.json();
+        clearInterval(timer);
+        if (!response.ok || !data.ok) {
+          state.history.push({ kind: 'system', content: data && data.error ? data.error : `HTTP ${response.status}`, meta: {} });
+          persistHistory();
+          renderHistory();
+          updateSession(null);
+          setStatus('Ответ сорвался');
+          return;
         }
-
-        const metadataBlock = data.metadataLines && data.metadataLines.length
-          ? `\n\n\`\`\`text\n${data.metadataLines.join('\n')}\n\`\`\``
-          : '';
-
-        state.history.push({
-          role: 'assistant',
-          kind: 'bot',
-          content: `${data.answer}${metadataBlock}`,
-          providerTitle: data.providerTitle,
-          modelId: data.modelId
+        if (data.warning) {
+          state.history.push({ kind: 'system', content: data.warning, meta: {} });
+        }
+        state.history = [];
+        const payloadHistory = Array.isArray(data.history) ? data.history : [];
+        payloadHistory.forEach(item => {
+          if (item.role === 'assistant') {
+            state.history.push({
+              kind: 'bot',
+              content: item.content,
+              meta: {
+                providerTitle: data.providerTitle,
+                modelId: data.modelId,
+                metadataLines: data.metadataLines || [],
+                roleTitle: data.roleTitle || roleTitle
+              }
+            });
+          } else if (item.role === 'user') {
+            state.history.push({
+              kind: 'user',
+              content: item.content,
+              meta: {
+                providerTitle: model ? model.providerTitle : 'INPUT',
+                modelId: model ? (model.modelId || '') : '',
+                roleTitle
+              }
+            });
+          }
         });
-        saveHistory();
+        if (!payloadHistory.length) {
+          state.history.push({
+            kind: 'bot',
+            content: data.answer,
+            meta: {
+              providerTitle: data.providerTitle,
+              modelId: data.modelId,
+              metadataLines: data.metadataLines || [],
+              roleTitle: data.roleTitle || roleTitle
+            }
+          });
+        }
+        persistHistory();
         renderHistory();
-
-        sessionBadge.innerHTML = `<span class="api-dot"></span><span>API ${escapeHtml(data.providerTitle)} | ${escapeHtml(data.modelId)}</span>`;
-        statusLine.textContent = data.warning || `Done. [##########] 100% | ${data.providerTitle} / ${data.modelId}`;
-      } catch (err) {
-        clearInterval(progressTimer);
-        const message = err && err.message ? err.message : 'Unknown error';
-        state.history.push({
-          role: 'system',
-          kind: 'system',
-          content: `**Error:** ${message}`,
-          providerTitle: 'SYSTEM',
-          modelId: 'ERR'
-        });
-        saveHistory();
+        updateSession(data);
+        setStatus('Ответ готов');
+      } catch (error) {
+        clearInterval(timer);
+        state.history.push({ kind: 'system', content: `Сетевая ошибка: ${error && error.message ? error.message : String(error)}`, meta: {} });
+        persistHistory();
         renderHistory();
-        statusLine.textContent = `Error: ${message}`;
+        updateSession(null);
+        setStatus('Сеть недоступна');
       } finally {
         sendBtn.disabled = false;
       }
     }
 
-    sendBtn.addEventListener('click', sendMessage);
-    clearHistoryBtn.addEventListener('click', () => {
-      state.history = [];
-      localStorage.removeItem('webHistory');
-      pushSystemMessage('**History cleared.** Console reset complete.');
-    });
-    scrollBottomBtn.addEventListener('click', () => {
-      chatLog.scrollTop = chatLog.scrollHeight;
-    });
-    promptInput.addEventListener('keydown', (event) => {
-      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-        sendMessage();
+    function boot() {
+      fillRoles();
+      fillModels();
+      fillQuickReplies();
+      updateSlot();
+      renderHistory();
+      setStatus('Система готова');
+    }
+
+    sendBtn.addEventListener('click', sendPrompt);
+    promptInput.addEventListener('keydown', event => {
+      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+        sendPrompt();
       }
     });
-
+    clearBtn.addEventListener('click', () => {
+      state.history = [];
+      persistHistory();
+      renderHistory();
+      updateSession(null);
+      setStatus('Диалог очищен');
+    });
+    bottomBtn.addEventListener('click', () => { chatLog.scrollTop = chatLog.scrollHeight; });
     boot();
   </script>
 </body>
 </html>"""
     return html_template.replace("__CONFIG_JSON__", config_json)
-
 
 def validate_env() -> tuple[str, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
     tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
