@@ -2512,10 +2512,60 @@ def web_ui_html() -> str:
       animation: scanline 10s linear infinite;
       opacity: 0.7;
     }
-    .space, .stars, .nebula, .orbs, .planets, .astronaut {
+    .space, .stars, .nebula, .orbs, .planets, .astronaut, .asteroids {
       position: fixed;
       inset: 0;
       pointer-events: none;
+    }
+    body.role-avito .nebula,
+    body.role-teacher .nebula,
+    body.role-repair .nebula,
+    body.role-garden .nebula,
+    body.role-mechanic .nebula,
+    body.role-programmer .nebula {
+      filter: blur(34px) saturate(1.25);
+    }
+    body.role-avito {
+      background:
+        radial-gradient(circle at 16% 18%, rgba(255, 0, 255, 0.26), transparent 18%),
+        radial-gradient(circle at 84% 18%, rgba(0, 242, 255, 0.22), transparent 18%),
+        radial-gradient(circle at 54% 76%, rgba(255, 148, 0, 0.14), transparent 22%),
+        linear-gradient(180deg, #05020b 0%, #0a0817 44%, #040209 100%);
+    }
+    body.role-teacher {
+      background:
+        radial-gradient(circle at 20% 18%, rgba(0, 242, 255, 0.24), transparent 18%),
+        radial-gradient(circle at 78% 16%, rgba(94, 140, 255, 0.24), transparent 18%),
+        radial-gradient(circle at 58% 76%, rgba(255, 255, 255, 0.10), transparent 22%),
+        linear-gradient(180deg, #02060d 0%, #07131b 44%, #040811 100%);
+    }
+    body.role-repair {
+      background:
+        radial-gradient(circle at 18% 16%, rgba(255, 92, 92, 0.20), transparent 18%),
+        radial-gradient(circle at 84% 18%, rgba(0, 242, 255, 0.18), transparent 18%),
+        radial-gradient(circle at 62% 78%, rgba(255, 180, 0, 0.14), transparent 22%),
+        linear-gradient(180deg, #090507 0%, #161015 44%, #090608 100%);
+    }
+    body.role-garden {
+      background:
+        radial-gradient(circle at 18% 18%, rgba(0, 255, 174, 0.18), transparent 18%),
+        radial-gradient(circle at 82% 16%, rgba(0, 242, 255, 0.16), transparent 16%),
+        radial-gradient(circle at 52% 76%, rgba(146, 255, 0, 0.10), transparent 22%),
+        linear-gradient(180deg, #020a08 0%, #07110f 44%, #030807 100%);
+    }
+    body.role-mechanic {
+      background:
+        radial-gradient(circle at 16% 18%, rgba(255, 102, 0, 0.16), transparent 18%),
+        radial-gradient(circle at 84% 16%, rgba(0, 242, 255, 0.20), transparent 18%),
+        radial-gradient(circle at 58% 74%, rgba(170, 170, 170, 0.08), transparent 22%),
+        linear-gradient(180deg, #080708 0%, #111419 44%, #050607 100%);
+    }
+    body.role-programmer {
+      background:
+        radial-gradient(circle at 18% 18%, rgba(0, 242, 255, 0.26), transparent 18%),
+        radial-gradient(circle at 82% 16%, rgba(127, 141, 255, 0.24), transparent 18%),
+        radial-gradient(circle at 58% 76%, rgba(255, 0, 255, 0.10), transparent 22%),
+        linear-gradient(180deg, #02040d 0%, #060b19 44%, #02050e 100%);
     }
     .space {
       background:
@@ -2644,6 +2694,29 @@ def web_ui_html() -> str:
       opacity: .82;
       animation: thrusterTrail 2.4s ease-in-out infinite;
     }
+    .asteroids::before, .asteroids::after {
+      content: "";
+      position: absolute;
+      width: 240px;
+      height: 4px;
+      border-radius: 999px;
+      background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.22), rgba(0,242,255,.42), rgba(255,255,255,0));
+      filter: blur(1px);
+      opacity: .65;
+      animation: asteroidFlow 12s linear infinite;
+    }
+    .asteroids::before {
+      top: 18%;
+      left: -20%;
+      transform: rotate(18deg);
+    }
+    .asteroids::after {
+      top: 54%;
+      left: -30%;
+      width: 180px;
+      animation-delay: -6s;
+      transform: rotate(18deg);
+    }
     @keyframes scanline {
       from { transform: translateY(0); }
       to { transform: translateY(calc(100vh + 260px)); }
@@ -2688,6 +2761,20 @@ def web_ui_html() -> str:
     @keyframes answerPulse {
       0%, 100% { box-shadow: 0 0 18px rgba(0,242,255,.18), 0 0 8px rgba(255,0,255,.08); }
       50% { box-shadow: 0 0 26px rgba(0,242,255,.30), 0 0 20px rgba(255,0,255,.18); }
+    }
+    @keyframes asteroidFlow {
+      from { transform: translate3d(0, 0, 0) rotate(18deg); opacity: 0; }
+      12% { opacity: .7; }
+      to { transform: translate3d(150vw, 46vh, 0) rotate(18deg); opacity: 0; }
+    }
+    @keyframes introFade {
+      0% { opacity: 0; transform: scale(1.04); }
+      100% { opacity: 1; transform: scale(1); }
+    }
+    @keyframes modelFlash {
+      0% { opacity: 0; }
+      20% { opacity: 1; }
+      100% { opacity: 0; }
     }
     .app {
       position: relative;
@@ -2811,6 +2898,19 @@ def web_ui_html() -> str:
     .field.model-active select {
       border-color: rgba(0,242,255,.56);
       box-shadow: 0 0 18px rgba(0,242,255,.22), 0 0 28px rgba(255,0,255,.16), inset 0 0 28px rgba(0,242,255,.10);
+    }
+    .field.flash {
+      position: relative;
+    }
+    .field.flash::after {
+      content: "";
+      position: absolute;
+      inset: -8px;
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,.22);
+      background: radial-gradient(circle, rgba(255,255,255,.26), rgba(0,242,255,.10), transparent 64%);
+      animation: modelFlash .55s ease;
+      pointer-events: none;
     }
     select, textarea {
       width: 100%;
@@ -2946,6 +3046,50 @@ def web_ui_html() -> str:
     }
     .mobile-controls .field {
       flex: 1;
+    }
+    .intro-screen {
+      position: fixed;
+      inset: 0;
+      z-index: 20;
+      display: grid;
+      place-items: center;
+      background:
+        radial-gradient(circle at center, rgba(0,242,255,.18), transparent 30%),
+        linear-gradient(180deg, rgba(2,3,9,.92), rgba(6,5,18,.94));
+      backdrop-filter: blur(12px);
+      transition: opacity .7s ease, visibility .7s ease;
+      animation: introFade .8s ease;
+    }
+    .intro-screen.hidden {
+      opacity: 0;
+      visibility: hidden;
+    }
+    .intro-card {
+      padding: 28px 32px;
+      border-radius: 28px;
+      border: 1px solid rgba(0,242,255,.22);
+      background: rgba(10, 12, 24, 0.74);
+      box-shadow: 0 0 28px rgba(0,242,255,.22), 0 0 34px rgba(255,0,255,.12);
+      text-align: center;
+      max-width: 520px;
+    }
+    .intro-title {
+      margin: 0 0 12px;
+      font-family: "Orbitron", sans-serif;
+      font-size: clamp(28px, 4vw, 48px);
+      letter-spacing: .18em;
+      text-transform: uppercase;
+      background: linear-gradient(90deg, #fff, #00f2ff, #ff00ff, #fff);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+    .intro-sub {
+      color: var(--muted);
+      font-size: 13px;
+      line-height: 1.8;
+      text-transform: uppercase;
+      letter-spacing: .16em;
     }
     .chat-log {
       min-height: 0;
@@ -3195,10 +3339,17 @@ def web_ui_html() -> str:
   <div class="stars"></div>
   <div class="nebula"></div>
   <div class="orbs"></div>
+  <div class="asteroids"></div>
   <div class="planets"></div>
   <div class="planet-ring big"></div>
   <div class="planet-ring small"></div>
   <div class="astronaut"></div>
+  <div class="intro-screen" id="introScreen">
+    <div class="intro-card">
+      <h2 class="intro-title">Cosmic Gate</h2>
+      <div class="intro-sub">Подключаю космос, роли и модели. Здесь один живой чат на твоих ключах.</div>
+    </div>
+  </div>
   <div class="app">
     <aside class="panel sidebar">
       <div class="brand">
@@ -3275,6 +3426,7 @@ def web_ui_html() -> str:
     const roleField = document.getElementById('roleField');
     const modelField = document.getElementById('modelField');
     const mobileControls = document.getElementById('mobileControls');
+    const introScreen = document.getElementById('introScreen');
     let generatingBubble = null;
     function esc(value) {
       return String(value || '')
@@ -3322,6 +3474,12 @@ def web_ui_html() -> str:
       markModelActive._timer = setTimeout(() => modelField.classList.remove('model-active'), 1400);
     }
 
+    function flashModelSwitch() {
+      modelField.classList.add('flash');
+      clearTimeout(flashModelSwitch._timer);
+      flashModelSwitch._timer = setTimeout(() => modelField.classList.remove('flash'), 580);
+    }
+
     function roleTransition() {
       chatLog.classList.remove('role-shift');
       void chatLog.offsetWidth;
@@ -3358,6 +3516,41 @@ def web_ui_html() -> str:
           sidebar.insertBefore(modelField, quickField);
         }
       }
+    }
+
+    function applyRoleTheme() {
+      const roleId = roleSelect.value || 'general';
+      document.body.classList.remove(
+        'role-avito',
+        'role-teacher',
+        'role-repair',
+        'role-garden',
+        'role-mechanic',
+        'role-programmer'
+      );
+      const map = {
+        avito: 'role-avito',
+        languages: 'role-teacher',
+        repair: 'role-repair',
+        garden: 'role-garden',
+        mechanic: 'role-mechanic',
+        programmer: 'role-programmer',
+      };
+      if (map[roleId]) {
+        document.body.classList.add(map[roleId]);
+      }
+    }
+
+    function maybeShowIntro() {
+      const seen = localStorage.getItem('introSeen') === '1';
+      if (seen) {
+        introScreen.classList.add('hidden');
+        return;
+      }
+      setTimeout(() => {
+        introScreen.classList.add('hidden');
+        localStorage.setItem('introSeen', '1');
+      }, 2100);
     }
 
     function setUltraMode(enabled) {
@@ -3611,6 +3804,8 @@ def web_ui_html() -> str:
       updateSlot();
       layoutControls();
       setUltraMode(localStorage.getItem('ultraMode') === '1');
+      applyRoleTheme();
+      maybeShowIntro();
       renderHistory();
       setStatus('Система готова');
     }
@@ -3629,8 +3824,14 @@ def web_ui_html() -> str:
       setStatus('Диалог очищен');
     });
     bottomBtn.addEventListener('click', () => { chatLog.scrollTop = chatLog.scrollHeight; });
-    roleSelect.addEventListener('change', roleTransition);
-    modelSelect.addEventListener('change', markModelActive);
+    roleSelect.addEventListener('change', () => {
+      roleTransition();
+      applyRoleTheme();
+    });
+    modelSelect.addEventListener('change', () => {
+      markModelActive();
+      flashModelSwitch();
+    });
     window.addEventListener('resize', layoutControls);
     window.addEventListener('mousemove', event => updateParallax(event.clientX, event.clientY), { passive: true });
     window.addEventListener('touchmove', event => {
