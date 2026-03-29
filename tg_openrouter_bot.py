@@ -2706,12 +2706,10 @@ def web_ui_html() -> str:
     .app {
       position: relative;
       z-index: 2;
-      width: min(1320px, calc(100vw - 18px));
+      width: min(1120px, calc(100vw - 18px));
       height: calc(100dvh - 18px);
       margin: 9px auto;
-      display: grid;
-      grid-template-columns: 340px 1fr;
-      gap: 16px;
+      display: block;
     }
     .panel {
       position: relative;
@@ -2730,10 +2728,7 @@ def web_ui_html() -> str:
       background: linear-gradient(135deg, rgba(0,242,255,.07), transparent 46%, rgba(255,0,255,.07));
     }
     .sidebar {
-      padding: 20px;
-      display: grid;
-      grid-template-rows: auto auto auto 1fr auto;
-      gap: 14px;
+      display: none;
     }
     .brand {
       display: flex;
@@ -2951,19 +2946,28 @@ def web_ui_html() -> str:
       flex-wrap: wrap;
       gap: 10px;
       border-bottom: 1px solid rgba(0,242,255,.08);
+      align-items: center;
     }
+    #bottomBtn, #ultraBtn { display: none; }
     .ghost-btn.toggle-active {
       border-color: rgba(255,0,255,.42);
       box-shadow: var(--shadow-magenta);
       color: #ffd9ff;
     }
     .mobile-controls {
-      display: none;
-      width: 100%;
+      display: flex;
+      flex: 1;
       gap: 10px;
+      min-width: 320px;
     }
     .mobile-controls .field {
       flex: 1;
+    }
+    .quick-list,
+    .slot-box,
+    .status-chip,
+    .intro-screen {
+      display: none !important;
     }
     .intro-screen {
       position: fixed;
@@ -3145,15 +3149,10 @@ def web_ui_html() -> str:
         overflow: auto;
       }
       .app {
-        grid-template-columns: 1fr;
         height: auto;
         min-height: calc(100dvh - 18px);
       }
-      .sidebar {
-        order: 2;
-      }
       .chat-shell {
-        order: 1;
         min-height: calc(100dvh - 18px);
       }
     }
@@ -3171,9 +3170,6 @@ def web_ui_html() -> str:
         padding-left: 14px;
         padding-right: 14px;
       }
-      .sidebar {
-        display: none;
-      }
       .panel {
         border-radius: 0;
         border-left: 0;
@@ -3184,9 +3180,6 @@ def web_ui_html() -> str:
         top: 0;
         z-index: 4;
         background: rgba(4, 6, 14, 0.88);
-      }
-      .mobile-controls {
-        display: flex;
       }
       .chat-log {
         min-height: 56dvh;
@@ -3211,39 +3204,9 @@ def web_ui_html() -> str:
       textarea {
         min-height: 80px;
       }
-      .astronaut {
-        background-position: 52% 14%;
-        background-size: min(180px, 44vw);
-        opacity: .55;
-      }
-      .astronaut::after {
-        left: 42%;
-        top: 18%;
-        width: 90px;
-      }
-      .planets::before {
-        width: 120px;
-        height: 120px;
-        top: 7%;
-        right: 8%;
-      }
-      .planets::after {
-        width: 72px;
-        height: 72px;
-        left: 6%;
-        bottom: 18%;
-      }
-      .planet-ring.big {
-        width: 160px;
-        height: 38px;
-        top: 11%;
-        right: 4%;
-      }
-      .planet-ring.small {
-        width: 94px;
-        height: 26px;
-        left: 4%;
-        bottom: 21%;
+      .mobile-controls {
+        min-width: 100%;
+        flex-direction: column;
       }
     }
   </style>
@@ -3412,23 +3375,11 @@ def web_ui_html() -> str:
     }
 
     function layoutControls() {
-      const mobile = window.matchMedia('(max-width: 720px)').matches;
-      if (mobile) {
-        if (!mobileControls.contains(roleField)) {
-          mobileControls.appendChild(roleField);
-        }
-        if (!mobileControls.contains(modelField)) {
-          mobileControls.appendChild(modelField);
-        }
-      } else {
-        const sidebar = document.querySelector('.sidebar');
-        const quickField = quickReplies.parentElement;
-        if (sidebar && roleField.parentElement !== sidebar) {
-          sidebar.insertBefore(roleField, quickField);
-        }
-        if (sidebar && modelField.parentElement !== sidebar) {
-          sidebar.insertBefore(modelField, quickField);
-        }
+      if (!mobileControls.contains(roleField)) {
+        mobileControls.appendChild(roleField);
+      }
+      if (!mobileControls.contains(modelField)) {
+        mobileControls.appendChild(modelField);
       }
     }
 
