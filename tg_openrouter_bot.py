@@ -15,6 +15,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from typing import Any
 
 from telegram import (
@@ -2474,14 +2475,14 @@ def web_ui_html() -> str:
       color: var(--text);
       font-family: "JetBrains Mono", monospace;
       background:
-        linear-gradient(180deg, rgba(3,5,12,.30), rgba(3,5,12,.38)),
-        url("https://cdn.pixabay.com/photo/2024/06/14/22/33/astronaut-8830722_1280.jpg") center center / cover no-repeat fixed;
+        linear-gradient(180deg, rgba(3,5,12,.22), rgba(3,5,12,.30)),
+        url("/bg.jpg") center center / cover no-repeat fixed;
       overflow: hidden;
     }
     body.ultra {
       background:
-        linear-gradient(180deg, rgba(3,5,12,.16), rgba(3,5,12,.24)),
-        url("https://cdn.pixabay.com/photo/2024/06/14/22/33/astronaut-8830722_1280.jpg") center center / cover no-repeat fixed;
+        linear-gradient(180deg, rgba(3,5,12,.10), rgba(3,5,12,.18)),
+        url("/bg.jpg") center center / cover no-repeat fixed;
     }
     body::before {
       content: "";
@@ -3926,6 +3927,20 @@ def main() -> None:
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
+                    return
+                if self.path == "/bg.jpg":
+                    bg_path = Path(__file__).with_name("web_space_bg.jpg")
+                    if bg_path.exists():
+                        body = bg_path.read_bytes()
+                        self.send_response(200)
+                        self.send_header("Content-Type", "image/jpeg")
+                        self.send_header("Content-Length", str(len(body)))
+                        self.send_header("Cache-Control", "public, max-age=86400")
+                        self.end_headers()
+                        self.wfile.write(body)
+                        return
+                    self.send_response(404)
+                    self.end_headers()
                     return
                 if self.path == "/api/config":
                     try:
