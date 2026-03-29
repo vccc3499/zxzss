@@ -2450,8 +2450,8 @@ def web_ui_html() -> str:
   <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
   <style>
     :root {
-      --panel: rgba(8, 10, 22, 0.66);
-      --panel-2: rgba(10, 14, 28, 0.82);
+      --panel: rgba(8, 10, 22, 0.22);
+      --panel-2: rgba(10, 14, 28, 0.28);
       --line: rgba(0, 242, 255, 0.18);
       --text: #ecffff;
       --muted: rgba(214, 244, 255, 0.72);
@@ -2474,9 +2474,9 @@ def web_ui_html() -> str:
       color: var(--text);
       font-family: "JetBrains Mono", monospace;
       background:
-        radial-gradient(circle at 14% 18%, rgba(0, 242, 255, 0.22), transparent 18%),
-        radial-gradient(circle at 84% 14%, rgba(255, 0, 255, 0.20), transparent 16%),
-        radial-gradient(circle at 58% 72%, rgba(106, 125, 255, 0.20), transparent 22%),
+        radial-gradient(circle at 14% 18%, rgba(0, 242, 255, 0.34), transparent 22%),
+        radial-gradient(circle at 84% 14%, rgba(255, 0, 255, 0.30), transparent 20%),
+        radial-gradient(circle at 58% 72%, rgba(106, 125, 255, 0.30), transparent 24%),
         linear-gradient(180deg, #020309 0%, #050712 45%, #020309 100%);
       overflow: hidden;
     }
@@ -2497,7 +2497,7 @@ def web_ui_html() -> str:
         linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
       background-size: 90px 90px;
       mask-image: radial-gradient(circle at center, black, transparent 82%);
-      opacity: 0.26;
+      opacity: 0.14;
     }
     body::after {
       content: "";
@@ -2510,7 +2510,7 @@ def web_ui_html() -> str:
       background: linear-gradient(180deg, rgba(0,242,255,0), rgba(0,242,255,0.13), rgba(255,0,255,0));
       filter: blur(10px);
       animation: scanline 10s linear infinite;
-      opacity: 0.7;
+      opacity: 0.88;
     }
     .space, .stars, .nebula, .orbs, .planets, .astronaut, .asteroids {
       position: fixed;
@@ -2572,8 +2572,8 @@ def web_ui_html() -> str:
         radial-gradient(circle at 50% 50%, rgba(255,255,255,.12), transparent 40%),
         radial-gradient(circle at 30% 70%, rgba(0,242,255,.12), transparent 24%),
         radial-gradient(circle at 70% 28%, rgba(255,0,255,.10), transparent 20%);
-      filter: blur(30px);
-      opacity: 0.85;
+      filter: blur(26px);
+      opacity: 1;
       transform: translate3d(calc(var(--mx) * .015), calc(var(--my) * .015), 0);
     }
     .stars {
@@ -2583,7 +2583,7 @@ def web_ui_html() -> str:
         radial-gradient(circle, rgba(255,0,255,.75) 0 1px, transparent 2px);
       background-size: 220px 220px, 320px 320px, 420px 420px;
       background-position: 0 0, 40px 80px, 120px 60px;
-      opacity: 0.6;
+      opacity: 0.9;
       animation: drift 30s linear infinite;
       transform: translate3d(calc(var(--mx) * .02), calc(var(--my) * .02), 0);
     }
@@ -2592,7 +2592,7 @@ def web_ui_html() -> str:
         radial-gradient(circle at 22% 26%, rgba(0,242,255,.15), transparent 28%),
         radial-gradient(circle at 78% 22%, rgba(255,0,255,.14), transparent 22%),
         radial-gradient(circle at 60% 84%, rgba(106,125,255,.18), transparent 24%);
-      filter: blur(28px);
+      filter: blur(36px);
       animation: floatNebula 18s ease-in-out infinite;
       transform: translate3d(calc(var(--mx) * .03), calc(var(--my) * .03), 0);
     }
@@ -2603,7 +2603,7 @@ def web_ui_html() -> str:
       height: 320px;
       border-radius: 50%;
       filter: blur(60px);
-      opacity: 0.35;
+      opacity: 0.5;
       animation: pulseOrb 8s ease-in-out infinite;
     }
     .orbs::before {
@@ -2792,8 +2792,8 @@ def web_ui_html() -> str:
       border-radius: var(--radius);
       background: var(--panel);
       border: 1px solid var(--line);
-      backdrop-filter: blur(20px);
-      box-shadow: var(--shadow-cyan);
+      backdrop-filter: blur(8px);
+      box-shadow: 0 0 10px rgba(0,242,255,.08);
     }
     .panel::before {
       content: "";
@@ -2824,12 +2824,7 @@ def web_ui_html() -> str:
       text-transform: uppercase;
     }
     .brand-sub {
-      margin-top: 10px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.8;
-      text-transform: uppercase;
-      letter-spacing: .18em;
+      display: none;
     }
     .status-chip {
       padding: 10px 12px;
@@ -2852,9 +2847,9 @@ def web_ui_html() -> str:
     .slot-box {
       padding: 16px 18px;
       border-radius: 24px;
-      background: var(--panel-2);
+      background: rgba(10, 14, 28, 0.18);
       border: 1px solid rgba(0,242,255,.18);
-      box-shadow: inset 0 0 28px rgba(0,242,255,.05), var(--shadow-cyan);
+      box-shadow: inset 0 0 18px rgba(0,242,255,.04), 0 0 10px rgba(0,242,255,.08);
     }
     .slot-head {
       display: flex;
@@ -2916,12 +2911,12 @@ def web_ui_html() -> str:
       width: 100%;
       border-radius: 20px;
       border: 1px solid rgba(0,242,255,.2);
-      background: rgba(6, 8, 18, 0.88);
+      background: rgba(6, 8, 18, 0.16);
       color: var(--text);
       font: inherit;
       outline: none;
       padding: 14px 16px;
-      box-shadow: inset 0 0 24px rgba(0,242,255,.04);
+      box-shadow: inset 0 0 10px rgba(0,242,255,.03);
     }
     select:focus, textarea:focus {
       border-color: rgba(0,242,255,.44);
@@ -2967,7 +2962,7 @@ def web_ui_html() -> str:
       border-radius: 999px;
       padding: 10px 12px;
       border: 1px solid rgba(255,255,255,.1);
-      background: rgba(255,255,255,.04);
+      background: rgba(255,255,255,.02);
       color: var(--text);
     }
     .quick-btn:hover, .ghost-btn:hover {
@@ -2999,11 +2994,7 @@ def web_ui_html() -> str:
       text-shadow: 0 0 20px rgba(0,242,255,.35), 0 0 32px rgba(255,0,255,.16);
     }
     .subtitle {
-      margin-top: 8px;
-      color: var(--muted);
-      font-size: 12px;
-      letter-spacing: .18em;
-      text-transform: uppercase;
+      display: none;
     }
     .session {
       display: inline-flex;
@@ -3012,7 +3003,7 @@ def web_ui_html() -> str:
       padding: 10px 14px;
       border-radius: 999px;
       border: 1px solid rgba(0,242,255,.26);
-      background: rgba(255,255,255,.04);
+      background: rgba(255,255,255,.02);
       box-shadow: var(--shadow-cyan);
       animation: loadingGlow 3s ease-in-out infinite;
       color: var(--text);
@@ -3065,16 +3056,16 @@ def web_ui_html() -> str:
       visibility: hidden;
     }
     .intro-card {
-      padding: 28px 32px;
+      padding: 20px 22px;
       border-radius: 28px;
       border: 1px solid rgba(0,242,255,.22);
-      background: rgba(10, 12, 24, 0.74);
-      box-shadow: 0 0 28px rgba(0,242,255,.22), 0 0 34px rgba(255,0,255,.12);
+      background: rgba(10, 12, 24, 0.12);
+      box-shadow: 0 0 14px rgba(0,242,255,.10), 0 0 18px rgba(255,0,255,.06);
       text-align: center;
       max-width: 520px;
     }
     .intro-title {
-      margin: 0 0 12px;
+      margin: 0;
       font-family: "Orbitron", sans-serif;
       font-size: clamp(28px, 4vw, 48px);
       letter-spacing: .18em;
@@ -3085,11 +3076,7 @@ def web_ui_html() -> str:
       color: transparent;
     }
     .intro-sub {
-      color: var(--muted);
-      font-size: 13px;
-      line-height: 1.8;
-      text-transform: uppercase;
-      letter-spacing: .16em;
+      display: none;
     }
     .chat-log {
       min-height: 0;
@@ -3105,9 +3092,9 @@ def web_ui_html() -> str:
       padding: 16px 18px;
       border-radius: 24px;
       border: 1px solid rgba(255,255,255,.08);
-      background: rgba(10, 12, 24, 0.74);
-      backdrop-filter: blur(14px);
-      box-shadow: 0 0 22px rgba(0,242,255,.10);
+      background: rgba(10, 12, 24, 0.14);
+      backdrop-filter: blur(6px);
+      box-shadow: 0 0 10px rgba(0,242,255,.05);
       animation: rise .24s ease;
       overflow-wrap: anywhere;
       line-height: 1.72;
@@ -3119,7 +3106,7 @@ def web_ui_html() -> str:
       border-radius: inherit;
       pointer-events: none;
       background: linear-gradient(135deg, rgba(0,242,255,.08), transparent 44%, rgba(255,0,255,.08));
-      opacity: .8;
+      opacity: .36;
     }
     .bubble.user {
       align-self: flex-end;
@@ -3160,7 +3147,7 @@ def web_ui_html() -> str:
       padding: 6px 10px;
       border-radius: 999px;
       border: 1px solid rgba(0,242,255,.16);
-      background: rgba(255,255,255,.03);
+      background: rgba(255,255,255,.015);
     }
     .bubble p { margin: 0; }
     .bubble ul { margin: 10px 0 0; padding-left: 18px; }
@@ -3181,8 +3168,8 @@ def web_ui_html() -> str:
       display: grid;
       gap: 12px;
       border-top: 1px solid rgba(0,242,255,.1);
-      background: rgba(3, 5, 12, 0.38);
-      backdrop-filter: blur(14px);
+      background: rgba(3, 5, 12, 0.12);
+      backdrop-filter: blur(6px);
     }
     .status {
       min-height: 18px;
@@ -3346,7 +3333,7 @@ def web_ui_html() -> str:
   <div class="astronaut"></div>
   <div class="intro-screen" id="introScreen">
     <div class="intro-card">
-      <h2 class="intro-title">Cosmic Gate</h2>
+      <h2 class="intro-title">AI BOT</h2>
       <div class="intro-sub">Подключаю космос, роли и модели. Здесь один живой чат на твоих ключах.</div>
     </div>
   </div>
@@ -3380,7 +3367,7 @@ def web_ui_html() -> str:
     <main class="panel chat-shell">
       <div class="topbar">
         <div>
-          <h2>Cosmic Chat</h2>
+          <h2>AI BOT</h2>
           <div class="subtitle">Минимум текста · максимум живых эффектов · один живой чат</div>
         </div>
         <div class="session" id="sessionBadge"><span class="dot"></span><span>API READY</span></div>
