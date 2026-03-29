@@ -2474,43 +2474,25 @@ def web_ui_html() -> str:
       color: var(--text);
       font-family: "JetBrains Mono", monospace;
       background:
-        radial-gradient(circle at 14% 18%, rgba(0, 242, 255, 0.34), transparent 22%),
-        radial-gradient(circle at 84% 14%, rgba(255, 0, 255, 0.30), transparent 20%),
-        radial-gradient(circle at 58% 72%, rgba(106, 125, 255, 0.30), transparent 24%),
-        linear-gradient(180deg, #020309 0%, #050712 45%, #020309 100%);
+        linear-gradient(180deg, rgba(3,5,12,.30), rgba(3,5,12,.38)),
+        url("https://cdn.pixabay.com/photo/2024/06/14/22/33/astronaut-8830722_1280.jpg") center center / cover no-repeat fixed;
       overflow: hidden;
     }
     body.ultra {
       background:
-        radial-gradient(circle at 18% 18%, rgba(0, 242, 255, 0.34), transparent 18%),
-        radial-gradient(circle at 84% 16%, rgba(255, 0, 255, 0.30), transparent 18%),
-        radial-gradient(circle at 56% 76%, rgba(127, 141, 255, 0.28), transparent 24%),
-        linear-gradient(180deg, #010208 0%, #090317 44%, #020109 100%);
+        linear-gradient(180deg, rgba(3,5,12,.16), rgba(3,5,12,.24)),
+        url("https://cdn.pixabay.com/photo/2024/06/14/22/33/astronaut-8830722_1280.jpg") center center / cover no-repeat fixed;
     }
     body::before {
       content: "";
       position: fixed;
       inset: 0;
       pointer-events: none;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
-      background-size: 90px 90px;
-      mask-image: radial-gradient(circle at center, black, transparent 82%);
-      opacity: 0.14;
+      background: rgba(2, 4, 10, 0.10);
+      opacity: 1;
     }
     body::after {
-      content: "";
-      position: fixed;
-      left: 0;
-      right: 0;
-      top: -30%;
-      height: 180px;
-      pointer-events: none;
-      background: linear-gradient(180deg, rgba(0,242,255,0), rgba(0,242,255,0.13), rgba(255,0,255,0));
-      filter: blur(10px);
-      animation: scanline 10s linear infinite;
-      opacity: 0.88;
+      display: none;
     }
     .space, .stars, .nebula, .orbs, .planets, .astronaut, .asteroids {
       position: fixed;
@@ -2568,33 +2550,13 @@ def web_ui_html() -> str:
         linear-gradient(180deg, #02040d 0%, #060b19 44%, #02050e 100%);
     }
     .space {
-      background:
-        radial-gradient(circle at 50% 50%, rgba(255,255,255,.12), transparent 40%),
-        radial-gradient(circle at 30% 70%, rgba(0,242,255,.12), transparent 24%),
-        radial-gradient(circle at 70% 28%, rgba(255,0,255,.10), transparent 20%);
-      filter: blur(26px);
-      opacity: 1;
-      transform: translate3d(calc(var(--mx) * .015), calc(var(--my) * .015), 0);
+      display: none;
     }
     .stars {
-      background-image:
-        radial-gradient(circle, rgba(255,255,255,.95) 0 1px, transparent 1.8px),
-        radial-gradient(circle, rgba(0,242,255,.9) 0 1px, transparent 2px),
-        radial-gradient(circle, rgba(255,0,255,.75) 0 1px, transparent 2px);
-      background-size: 220px 220px, 320px 320px, 420px 420px;
-      background-position: 0 0, 40px 80px, 120px 60px;
-      opacity: 0.9;
-      animation: drift 30s linear infinite;
-      transform: translate3d(calc(var(--mx) * .02), calc(var(--my) * .02), 0);
+      display: none;
     }
     .nebula {
-      background:
-        radial-gradient(circle at 22% 26%, rgba(0,242,255,.15), transparent 28%),
-        radial-gradient(circle at 78% 22%, rgba(255,0,255,.14), transparent 22%),
-        radial-gradient(circle at 60% 84%, rgba(106,125,255,.18), transparent 24%);
-      filter: blur(36px);
-      animation: floatNebula 18s ease-in-out infinite;
-      transform: translate3d(calc(var(--mx) * .03), calc(var(--my) * .03), 0);
+      display: none;
     }
     .orbs::before, .orbs::after {
       content: "";
@@ -2607,15 +2569,10 @@ def web_ui_html() -> str:
       animation: pulseOrb 8s ease-in-out infinite;
     }
     .orbs::before {
-      left: -80px;
-      top: 10%;
-      background: rgba(0, 242, 255, 0.18);
+      display: none;
     }
     .orbs::after {
-      right: -80px;
-      bottom: 8%;
-      background: rgba(255, 0, 255, 0.16);
-      animation-delay: -4s;
+      display: none;
     }
     .planets::before, .planets::after {
       content: "";
@@ -2624,7 +2581,7 @@ def web_ui_html() -> str:
       box-shadow: 0 0 30px rgba(255,0,255,.18), inset -26px -22px 60px rgba(0,0,0,.28);
     }
     .planets {
-      transform: translate3d(calc(var(--mx) * .04), calc(var(--my) * .04), 0);
+      display: none;
     }
     .planets::before {
       width: 220px;
@@ -2648,12 +2605,7 @@ def web_ui_html() -> str:
       transform: translate3d(calc(var(--mx) * .06), calc(var(--my) * .06), 0);
     }
     .planet-ring {
-      position: absolute;
-      border-radius: 50%;
-      border: 2px solid rgba(210, 170, 255, .36);
-      box-shadow: 0 0 18px rgba(255,0,255,.18);
-      transform-style: preserve-3d;
-      animation: ringSpin 18s linear infinite;
+      display: none;
     }
     .planet-ring.big {
       width: 280px;
@@ -2671,39 +2623,13 @@ def web_ui_html() -> str:
       animation-duration: 12s;
     }
     .astronaut {
-      background-repeat: no-repeat;
-      background-position: 14% 62%;
-      background-size: min(320px, 32vw);
-      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 260 260'%3E%3Cg fill='none' stroke='%2300f2ff' stroke-width='4'%3E%3Cellipse cx='120' cy='70' rx='42' ry='46' fill='rgba(255,255,255,0.08)'/%3E%3Cpath d='M85 70c8-28 62-28 70 0' stroke='%23ff00ff'/%3E%3Cpath d='M92 120c18 10 58 10 76 0l20 48-28 14-10-23-12 62h-34l-8-62-14 21-26-12 18-48z' fill='rgba(255,255,255,0.05)'/%3E%3Cpath d='M84 128l-34 24M160 128l40 20M104 218l-22 28M136 220l18 30' stroke='%23ffffff'/%3E%3Ccircle cx='120' cy='70' r='18' fill='rgba(0,242,255,0.14)'/%3E%3Cpath d='M52 152c18 10 26 28 18 42' stroke='%23ff00ff'/%3E%3Cpath d='M196 148c12 10 18 26 10 42' stroke='%2300f2ff'/%3E%3C/g%3E%3C/svg%3E");
-      filter: drop-shadow(0 0 22px rgba(0,242,255,.35)) drop-shadow(0 0 36px rgba(255,0,255,.16));
-      opacity: .9;
-      transform: translate3d(calc(var(--mx) * -.08), calc(var(--my) * -.08), 0) rotate(-10deg);
-      animation: astronautFloat 10s ease-in-out infinite;
+      display: none;
     }
     .astronaut::after {
-      content: "";
-      position: absolute;
-      left: 9%;
-      top: 63%;
-      width: 140px;
-      height: 80px;
-      background:
-        linear-gradient(90deg, rgba(255,255,255,0), rgba(0,242,255,.22), rgba(255,0,255,.16), rgba(255,255,255,0));
-      filter: blur(14px);
-      transform: rotate(-16deg) translate3d(calc(var(--mx) * -.08), calc(var(--my) * -.08), 0);
-      opacity: .82;
-      animation: thrusterTrail 2.4s ease-in-out infinite;
+      display: none;
     }
     .asteroids::before, .asteroids::after {
-      content: "";
-      position: absolute;
-      width: 240px;
-      height: 4px;
-      border-radius: 999px;
-      background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,.22), rgba(0,242,255,.42), rgba(255,255,255,0));
-      filter: blur(1px);
-      opacity: .65;
-      animation: asteroidFlow 12s linear infinite;
+      display: none;
     }
     .asteroids::before {
       top: 18%;
