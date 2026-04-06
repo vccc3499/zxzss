@@ -37,6 +37,7 @@ GROQ_BASE = "https://api.groq.com/openai/v1"
 MISTRAL_BASE = "https://api.mistral.ai/v1"
 SILICONFLOW_BASE = "https://api.siliconflow.com/v1"
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
+LLM7_BASE = "https://api.llm7.io/v1"
 LEGNEXT_BASE = os.getenv("LEGNEXT_BASE_URL", "https://api.legnext.ai/api/v1")
 POLLINATIONS_TEXT_BASES = (
     "https://gen.pollinations.ai/v1",
@@ -75,6 +76,7 @@ PROVIDER_HF = "huggingface"
 PROVIDER_MISTRAL = "mistral"
 PROVIDER_SILICONFLOW = "siliconflow"
 PROVIDER_GEMINI = "gemini"
+PROVIDER_LLM7 = "llm7"
 PROVIDER_LEGNEXT = "legnext"
 PROVIDER_POLLINATIONS = "pollinations"
 
@@ -127,6 +129,10 @@ STATIC_CHAT_MODELS: dict[str, list[str]] = {
         "gemini-2.5-pro",
         "gemini-2.0-flash",
     ],
+    PROVIDER_LLM7: [
+        "default",
+        "fast",
+    ],
     PROVIDER_POLLINATIONS: [
         "gpt-5",
         "claude",
@@ -143,6 +149,8 @@ PREFERRED_CHAT_MODELS = [
     "claude",
     "gemini-2.5-flash",
     "gemini-2.5-pro",
+    "default",
+    "fast",
     "gemini",
     "deepseek",
     "qwen3-coder",
@@ -1091,6 +1099,41 @@ class GeminiClient(BaseClient):
         return text, usage
 
 
+class LLM7Client(BaseClient):
+    provider_id = PROVIDER_LLM7
+    title = "LLM7"
+
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Accept": "application/json",
+        }
+
+    async def get_candidate_models(self) -> list[str]:
+        return list(STATIC_CHAT_MODELS.get(PROVIDER_LLM7, []))
+
+    async def chat_with_usage(self, model: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, int] | None]:
+        payload = {"model": model, "messages": messages, "temperature": 0.6}
+        data = await call_json_with_retry(
+            f"{LLM7_BASE}/chat/completions",
+            "POST",
+            payload,
+            self.headers,
+        )
+        text = data["choices"][0]["message"]["content"].strip()
+        usage_raw = data.get("usage", {}) or {}
+        usage = {
+            "prompt_tokens": int(usage_raw.get("prompt_tokens", 0) or 0),
+            "completion_tokens": int(usage_raw.get("completion_tokens", 0) or 0),
+            "total_tokens": int(usage_raw.get("total_tokens", 0) or 0),
+        }
+        return text, usage
+
+
 class PollinationsTextClient(BaseClient):
     provider_id = PROVIDER_POLLINATIONS
     title = "Pollinations"
@@ -1189,11 +1232,11 @@ def model_entry_label(entry: ModelEntry) -> str:
     else:
         prefix = provider_title(entry.provider_id)
     if entry.model_type == MODEL_TYPE_CHAT:
-        label = model_group_label(entry.provider_id, entry.model_id)
+        label = f"[ЧАТ] {model_group_label(entry.provider_id, entry.model_id)}"
     elif entry.model_type == MODEL_TYPE_IMAGE:
-        label = f"[IMG] {entry.model_id}"
+        label = f"[ФОТО] {entry.model_id}"
     else:
-        label = f"[VID] {entry.model_id}"
+        label = f"[ВИДЕО] {entry.model_id}"
     return f"{prefix} | {label}"
 
 
@@ -1297,6 +1340,8 @@ def provider_title(provider_id: str) -> str:
         return "Groq"
     if provider_id == PROVIDER_GEMINI:
         return "Gemini"
+    if provider_id == PROVIDER_LLM7:
+        return "LLM7"
     if provider_id == PROVIDER_MISTRAL:
         return "Mistral"
     if provider_id == PROVIDER_SILICONFLOW:
@@ -3703,11 +3748,23 @@ def web_ui_html() -> str:
 
     function fillModels() {
       modelSelect.innerHTML = '';
-      state.config.models.forEach(model => {
-        const option = document.createElement('option');
-        option.value = model.key;
-        option.textContent = `${model.modelId || model.label} · ${model.providerTitle || ''}`;
-        modelSelect.appendChild(option);
+      const groups = [
+        { type: 'chat', title: '???' },
+        { type: 'image', title: '????' },
+        { type: 'video', title: '?????' }
+      ];
+      groups.forEach(groupInfo => {
+        const bucket = (state.config.models || []).filter(model => model.type === groupInfo.type);
+        if (!bucket.length) return;
+        const group = document.createElement('optgroup');
+        group.label = groupInfo.title;
+        bucket.forEach(model => {
+          const option = document.createElement('option');
+          option.value = model.key;
+          option.textContent = `${model.modelId || model.label} ? ${model.providerTitle || ''}`;
+          group.appendChild(option);
+        });
+        modelSelect.appendChild(group);
       });
       if (state.config.defaultModelKey) {
         modelSelect.value = state.config.defaultModelKey;
@@ -3915,7 +3972,7 @@ def web_ui_html() -> str:
 </html>"""
     return html_template.replace("__CONFIG_JSON__", config_json)
 
-def validate_env() -> tuple[str, str | None, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
+def validate_env() -> tuple[str, str | None, str | None, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
     tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     or_key = os.getenv("OPENROUTER_API_KEY", "").strip() or None
     groq_key = os.getenv("GROQ_API_KEY", "").strip() or None
@@ -3923,6 +3980,7 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
     mistral_key = os.getenv("MISTRAL_API_KEY", "").strip() or None
     siliconflow_key = os.getenv("SILICONFLOW_API_KEY", "").strip() or None
     gemini_key = os.getenv("GEMINI_API_KEY", "").strip() or None
+    llm7_key = os.getenv("LLM7_API_KEY", "").strip() or None
     legnext_key = os.getenv("LEGNEXT_API_KEY", "").strip() or None
     pollinations_key = os.getenv("POLLINATIONS_API_KEY", "").strip() or None
     pollinations_enabled = bool(os.getenv("POLLINATIONS_ENABLE", "").strip())
@@ -3973,6 +4031,12 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
         except UnicodeEncodeError as e:
             raise RuntimeError("GEMINI_API_KEY must be ASCII") from e
 
+    if llm7_key:
+        try:
+            llm7_key.encode("ascii")
+        except UnicodeEncodeError as e:
+            raise RuntimeError("LLM7_API_KEY must be ASCII") from e
+
     if legnext_key:
         try:
             legnext_key.encode("ascii")
@@ -3985,9 +4049,9 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
         except UnicodeEncodeError as e:
             raise RuntimeError("POLLINATIONS_API_KEY must be ASCII") from e
 
-    return tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, gemini_key, legnext_key, pollinations_key
+    return tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, gemini_key, llm7_key, legnext_key, pollinations_key
 def main() -> None:
-    tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, gemini_key, legnext_key, pollinations_key = validate_env()
+    tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, gemini_key, llm7_key, legnext_key, pollinations_key = validate_env()
     token_limits_env = os.getenv("MODEL_TOKEN_LIMITS")
     request_limits_env = os.getenv("MODEL_REQUEST_LIMITS")
     providers: dict[str, BaseClient] = {}
@@ -4004,6 +4068,8 @@ def main() -> None:
         providers[PROVIDER_SILICONFLOW] = SiliconFlowClient(siliconflow_key)
     if gemini_key:
         providers[PROVIDER_GEMINI] = GeminiClient(gemini_key)
+    if llm7_key:
+        providers[PROVIDER_LLM7] = LLM7Client(llm7_key)
 
     pollinations_enabled = bool(pollinations_key or os.getenv("POLLINATIONS_ENABLE", "").strip())
     pollinations_text_models = parse_csv_env_list(
@@ -4031,6 +4097,7 @@ def main() -> None:
     app.bot_data[current_models_key(PROVIDER_MISTRAL)] = []
     app.bot_data[current_models_key(PROVIDER_SILICONFLOW)] = []
     app.bot_data[current_models_key(PROVIDER_GEMINI)] = []
+    app.bot_data[current_models_key(PROVIDER_LLM7)] = []
     app.bot_data[current_models_key(PROVIDER_POLLINATIONS)] = []
     app.bot_data["legnext_api_key"] = legnext_key
     app.bot_data["pollinations_api_key"] = pollinations_key
