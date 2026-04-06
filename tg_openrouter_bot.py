@@ -1649,15 +1649,23 @@ async def refresh_provider_models(
     provider_id: str,
     verify: bool = False,
 ) -> tuple[int, int, str]:
-    models = list(STATIC_CHAT_MODELS.get(provider_id, []))
+    client: BaseClient | None = context.bot_data.get("providers", {}).get(provider_id)
+    models: list[str] = []
+    if client:
+        try:
+            models = list(await client.get_candidate_models())
+        except Exception:
+            models = []
+    if not models:
+        models = list(STATIC_CHAT_MODELS.get(provider_id, []))
     if not models:
         context.bot_data[current_models_key(provider_id)] = []
         context.bot_data[f"unavailable:{provider_id}"] = []
-        return 0, 0, f"Не найдено моделей для {provider_title(provider_id)}."
+        return 0, 0, f"?? ??????? ??????? ??? {provider_title(provider_id)}."
+    models = sorted(dict.fromkeys(models))
     context.bot_data[current_models_key(provider_id)] = models
     context.bot_data[f"unavailable:{provider_id}"] = []
-    return len(models), len(models), f"Готово ({provider_title(provider_id)})."
-
+    return len(models), len(models), f"?????? ({provider_title(provider_id)})."
 
 def build_model_catalog(context: ContextTypes.DEFAULT_TYPE) -> list[ModelEntry]:
     catalog: list[ModelEntry] = []
@@ -1755,11 +1763,8 @@ async def refresh_all_cmd(
     context: ContextTypes.DEFAULT_TYPE,
     notify_only: bool = False,
 ) -> None:
-    # Use static pre-verified lists to avoid slow refresh checks.
     for provider_id in sorted(context.bot_data.get("chat_providers", set())):
-        models = list(STATIC_CHAT_MODELS.get(provider_id, []))
-        context.bot_data[current_models_key(provider_id)] = models
-        context.bot_data[f"unavailable:{provider_id}"] = []
+        await refresh_provider_models(context, provider_id)
 
     agents = build_global_agents(context)
     context.bot_data["global_agents"] = agents
