@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import html
+import io
 import json
 import os
 import re
@@ -35,6 +36,7 @@ OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 GROQ_BASE = "https://api.groq.com/openai/v1"
 MISTRAL_BASE = "https://api.mistral.ai/v1"
 SILICONFLOW_BASE = "https://api.siliconflow.com/v1"
+GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai"
 LEGNEXT_BASE = os.getenv("LEGNEXT_BASE_URL", "https://api.legnext.ai/api/v1")
 POLLINATIONS_TEXT_BASES = (
     "https://gen.pollinations.ai/v1",
@@ -72,6 +74,7 @@ PROVIDER_GROQ = "groq"
 PROVIDER_HF = "huggingface"
 PROVIDER_MISTRAL = "mistral"
 PROVIDER_SILICONFLOW = "siliconflow"
+PROVIDER_GEMINI = "gemini"
 PROVIDER_LEGNEXT = "legnext"
 PROVIDER_POLLINATIONS = "pollinations"
 
@@ -119,6 +122,11 @@ STATIC_CHAT_MODELS: dict[str, list[str]] = {
         "CohereLabs/c4ai-command-r7b-12-2024",
         "CohereLabs/c4ai-command-r7b-arabic-02-2025",
     ],
+    PROVIDER_GEMINI: [
+        "gemini-2.5-flash",
+        "gemini-2.5-pro",
+        "gemini-2.0-flash",
+    ],
     PROVIDER_POLLINATIONS: [
         "gpt-5",
         "claude",
@@ -133,6 +141,8 @@ PREFERRED_CHAT_MODELS = [
     "arcee-ai/trinity-large-preview:free",
     "gpt-5",
     "claude",
+    "gemini-2.5-flash",
+    "gemini-2.5-pro",
     "gemini",
     "deepseek",
     "qwen3-coder",
@@ -1046,6 +1056,41 @@ class SiliconFlowClient(BaseClient):
         return text, usage
 
 
+class GeminiClient(BaseClient):
+    provider_id = PROVIDER_GEMINI
+    title = "Gemini"
+
+    def __init__(self, api_key: str):
+        self.api_key = api_key
+
+    @property
+    def headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Bearer {self.api_key}",
+            "Accept": "application/json",
+        }
+
+    async def get_candidate_models(self) -> list[str]:
+        return list(STATIC_CHAT_MODELS.get(PROVIDER_GEMINI, []))
+
+    async def chat_with_usage(self, model: str, messages: list[dict[str, str]]) -> tuple[str, dict[str, int] | None]:
+        payload = {"model": model, "messages": messages, "temperature": 0.6}
+        data = await call_json_with_retry(
+            f"{GEMINI_BASE}/chat/completions",
+            "POST",
+            payload,
+            self.headers,
+        )
+        text = data["choices"][0]["message"]["content"].strip()
+        usage_raw = data.get("usage", {}) or {}
+        usage = {
+            "prompt_tokens": int(usage_raw.get("prompt_tokens", 0) or 0),
+            "completion_tokens": int(usage_raw.get("completion_tokens", 0) or 0),
+            "total_tokens": int(usage_raw.get("total_tokens", 0) or 0),
+        }
+        return text, usage
+
+
 class PollinationsTextClient(BaseClient):
     provider_id = PROVIDER_POLLINATIONS
     title = "Pollinations"
@@ -1250,6 +1295,8 @@ def provider_title(provider_id: str) -> str:
         return "OpenRouter"
     if provider_id == PROVIDER_GROQ:
         return "Groq"
+    if provider_id == PROVIDER_GEMINI:
+        return "Gemini"
     if provider_id == PROVIDER_MISTRAL:
         return "Mistral"
     if provider_id == PROVIDER_SILICONFLOW:
@@ -2036,8 +2083,93 @@ def pollinations_media_url(prompt: str, model_id: str, media_type: str, api_key:
     return f"{base}?{urllib.parse.urlencode(params)}"
 
 
-async def legnext_create_task(api_key: str, endpoint: str, payload: dict[str, Any]) -> str:
+def _http_fetch_bytes(
+    url: str,
+    headers: dict[str, str] | None = None,
+    timeout: int = 180,
+) -> tuple[bytes, str, str]:
+    req_headers = {"User-Agent": "Mozilla/5.0 (Codex-Telegram-Bot)"}
+    if headers:
+        req_headers.update(headers)
+    req = urllib.request.Request(url, headers=req_headers, method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        body = resp.read()
+        content_type = resp.headers.get("Content-Type", "")
+        final_url = resp.geturl()
+        return body, content_type, final_url
+
+
+async def fetch_media_bytes_with_retry(
+    url: str,
+    expected_type: str,
+    headers: dict[str, str] | None = None,
+    timeout_sec: int = 180,
+    poll_delay: float = 2.5,
+) -> tuple[bytes, str]:
+    deadline = asyncio.get_event_loop().time() + timeout_sec
+    last_error: str | None = None
+    while True:
+        try:
+            body, content_type, final_url = await asyncio.to_thread(_http_fetch_bytes, url, headers, min(90, timeout_sec))
+            lowered = (content_type or "").lower()
+            if lowered.startswith(f"{expected_type}/"):
+                return body, lowered
+            if "application/json" in lowered or "text/" in lowered:
+                raw_text = body.decode("utf-8", errors="ignore")
+                try:
+                    data = json.loads(raw_text)
+                except Exception:
+                    data = None
+                if isinstance(data, dict):
+                    nested_url = (
+                        data.get("url")
+                        or data.get("output_url")
+                        or data.get("result", {}).get("url")
+                        or data.get("data", {}).get("url")
+                    )
+                    if nested_url and nested_url != url and nested_url != final_url:
+                        url = str(nested_url)
+                        await asyncio.sleep(0.4)
+                        continue
+                    status = str(data.get("status") or data.get("state") or "").lower()
+                    if status in {"processing", "pending", "queued", "running"}:
+                        last_error = status
+                    elif data.get("error"):
+                        last_error = str(data.get("error"))
+                    else:
+                        last_error = raw_text[:240]
+                else:
+                    last_error = raw_text[:240]
+            else:
+                last_error = f"unexpected content-type: {content_type or '-'}"
+        except Exception as e:
+            last_error = str(e)
+        if asyncio.get_event_loop().time() >= deadline:
+            raise RuntimeError(last_error or "media generation timeout")
+        await asyncio.sleep(poll_delay)
+
+
+async def send_generated_media(
+    message,
+    bot_data: dict[str, Any],
+    url: str,
+    media_type: str,
+    caption: str,
+) -> None:
+    expected = "image" if media_type == MODEL_TYPE_IMAGE else "video"
+    body, content_type = await fetch_media_bytes_with_retry(url, expected)
+    ext = ".jpg" if content_type.startswith("image/") else ".mp4"
+    bio = io.BytesIO(body)
+    bio.name = f"generated{ext}"
+    if media_type == MODEL_TYPE_IMAGE:
+        await telegram_api_call(bot_data, message.reply_photo, photo=bio, caption=caption, reply_markup=menu_keyboard())
+        return
+    await telegram_api_call(bot_data, message.reply_video, video=bio, caption=caption, reply_markup=menu_keyboard())
+
+
+async def legnext_create_task(api_key: str, endpoint: str, model_id: str, prompt: str) -> str:
     headers = {"x-api-key": api_key}
+    payload = {"model": model_id, "prompt": prompt}
     data = await call_json_with_retry(f"{LEGNEXT_BASE}/{endpoint}", "POST", payload, headers)
     return str(
         data.get("task_id")
@@ -2232,7 +2364,7 @@ async def handle_image_request(update: Update, context: ContextTypes.DEFAULT_TYP
     if provider_id == PROVIDER_POLLINATIONS:
         api_key = context.bot_data.get("pollinations_api_key")
         url = pollinations_media_url(prompt, entry.model_id, "image", api_key)
-        await update.message.reply_photo(photo=url, caption=f"{entry.model_id}")
+        await send_generated_media(update.message, context.bot_data, url, MODEL_TYPE_IMAGE, entry.model_id)
         return
 
     if provider_id == PROVIDER_LEGNEXT:
@@ -2246,7 +2378,7 @@ async def handle_image_request(update: Update, context: ContextTypes.DEFAULT_TYP
         if not url:
             await update.message.reply_text("?? ??????? ???????? ???????????.", reply_markup=menu_keyboard())
             return
-        await update.message.reply_photo(photo=url, caption=f"{entry.model_id}")
+        await send_generated_media(update.message, context.bot_data, str(url), MODEL_TYPE_IMAGE, entry.model_id)
         return
 
     await update.message.reply_text("????????? ?? ???????????? ????????? ???????????.", reply_markup=menu_keyboard())
@@ -2257,7 +2389,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
     if provider_id == PROVIDER_POLLINATIONS:
         api_key = context.bot_data.get("pollinations_api_key")
         url = pollinations_media_url(prompt, entry.model_id, "video", api_key)
-        await update.message.reply_text(url, reply_markup=menu_keyboard())
+        await send_generated_media(update.message, context.bot_data, url, MODEL_TYPE_VIDEO, entry.model_id)
         return
 
     if provider_id == PROVIDER_LEGNEXT:
@@ -2271,7 +2403,7 @@ async def handle_video_request(update: Update, context: ContextTypes.DEFAULT_TYP
         if not url:
             await update.message.reply_text("?? ??????? ???????? ?????.", reply_markup=menu_keyboard())
             return
-        await update.message.reply_text(url, reply_markup=menu_keyboard())
+        await send_generated_media(update.message, context.bot_data, str(url), MODEL_TYPE_VIDEO, entry.model_id)
         return
 
     await update.message.reply_text("????????? ?? ???????????? ????????? ?????.", reply_markup=menu_keyboard())
@@ -2346,7 +2478,7 @@ def build_web_config(bot_data: dict[str, Any]) -> dict[str, Any]:
                         providers=[provider_id],
                     )
                 )
-    web_models = [entry for entry in build_web_catalog(bot_data) if entry.get("type") == MODEL_TYPE_CHAT]
+    web_models = build_web_catalog(bot_data)
     preferred_key = preferred_chat_model_key(catalog)
     key_slot_active = max(1, int(os.getenv("KEY_SLOT_ACTIVE", "1") or "1"))
     key_slots_total = max(key_slot_active, int(os.getenv("KEY_SLOTS_TOTAL", "20") or "20"))
@@ -2381,13 +2513,51 @@ async def web_chat_response(payload: dict[str, Any]) -> dict[str, Any]:
     bot_data = WEB_RUNTIME["bot_data"]
     user_text = str(payload.get("message") or "").strip()
     if not user_text:
-        return {"ok": False, "error": "Пустое сообщение."}
+        return {"ok": False, "error": "?????? ?????????."}
 
     catalog: list[ModelEntry] = bot_data.get("models_catalog", [])
     preferred_key = preferred_chat_model_key(catalog)
+    catalog_by_key: dict[str, ModelEntry] = bot_data.get("catalog_by_key", {})
+    selected_key = str(payload.get("selectedModelKey") or preferred_key or "")
+    selected_entry = catalog_by_key.get(selected_key)
     role_id = str(payload.get("roleId") or "general")
     if role_id not in ROLE_MAP:
         role_id = "general"
+
+    if selected_entry and selected_entry.model_type in {MODEL_TYPE_IMAGE, MODEL_TYPE_VIDEO}:
+        provider_id = selected_entry.provider_id
+        media_url: str | None = None
+        if provider_id == PROVIDER_POLLINATIONS:
+            media_url = pollinations_media_url(
+                user_text,
+                selected_entry.model_id,
+                "image" if selected_entry.model_type == MODEL_TYPE_IMAGE else "video",
+                bot_data.get("pollinations_api_key"),
+            )
+        elif provider_id == PROVIDER_LEGNEXT:
+            api_key = bot_data.get("legnext_api_key")
+            if not api_key:
+                return {"ok": False, "error": "LegNext API key ?? ?????."}
+            endpoint = "image" if selected_entry.model_type == MODEL_TYPE_IMAGE else "video"
+            task_id = await legnext_create_task(api_key, endpoint, selected_entry.model_id, user_text)
+            result = await legnext_wait_result(api_key, task_id)
+            media_url = result.get("output_url") or result.get("url") or result.get("result", {}).get("url")
+        if not media_url:
+            return {"ok": False, "error": "????????? ?? ??????? ????."}
+        return {
+            "ok": True,
+            "answer": "????????? ?????????.",
+            "providerId": provider_id,
+            "providerTitle": provider_title(provider_id),
+            "modelId": selected_entry.model_id,
+            "mediaType": selected_entry.model_type,
+            "mediaUrl": str(media_url),
+            "selectedModelKey": selected_entry.key,
+            "roleId": role_id,
+            "roleTitle": role_title(role_id),
+            "history": [],
+            "metadataLines": [],
+        }
 
     history = initial_history(role_id)
     incoming_history = payload.get("history") or []
@@ -2401,7 +2571,7 @@ async def web_chat_response(payload: dict[str, Any]) -> dict[str, Any]:
                 history.append({"role": role, "content": content})
 
     state = {
-        "selected_model_key": str(payload.get("selectedModelKey") or preferred_key or ""),
+        "selected_model_key": selected_key,
         "selected_role_id": role_id,
         "history": history,
     }
@@ -2412,7 +2582,7 @@ async def web_chat_response(payload: dict[str, Any]) -> dict[str, Any]:
     started_at = time.perf_counter()
     result, used_provider, warning, actual_entry = await execute_chat_turn(bot_data, state, user_text)
     if not result or not result.answer:
-        return {"ok": False, "error": warning or "Ответ не получен."}
+        return {"ok": False, "error": warning or "????? ?? ???????."}
 
     answer = result.answer
     elapsed_sec = time.perf_counter() - started_at
@@ -3461,7 +3631,16 @@ def web_ui_html() -> str:
       head.appendChild(right);
       bubble.appendChild(head);
       const body = document.createElement('div');
-      body.innerHTML = kind === 'user' ? `<p>${esc(content)}</p>` : renderRichText(content);
+      if (meta && meta.mediaUrl) {
+        const mediaUrl = esc(meta.mediaUrl);
+        if (meta.mediaType === 'video') {
+          body.innerHTML = `<video controls playsinline preload="metadata" src="${mediaUrl}" style="width:100%;border-radius:18px;box-shadow:0 0 22px rgba(0,242,255,.18);background:#000"></video>${content ? renderRichText(content) : ''}`;
+        } else {
+          body.innerHTML = `<img src="${mediaUrl}" alt="generated" style="width:100%;border-radius:18px;box-shadow:0 0 22px rgba(0,242,255,.18);display:block" />${content ? renderRichText(content) : ''}`;
+        }
+      } else {
+        body.innerHTML = kind === 'user' ? `<p>${esc(content)}</p>` : renderRichText(content);
+      }
       bubble.appendChild(body);
       if (meta && Array.isArray(meta.metadataLines) && meta.metadataLines.length) {
         const footer = document.createElement('div');
@@ -3607,6 +3786,25 @@ def web_ui_html() -> str:
         if (data.warning) {
           state.history.push({ kind: 'system', content: data.warning, meta: {} });
         }
+        if (data.mediaUrl) {
+          state.history.push({
+            kind: 'bot',
+            content: data.answer || '',
+            meta: {
+              providerTitle: data.providerTitle,
+              modelId: data.modelId,
+              roleTitle: data.roleTitle || roleTitle,
+              mediaUrl: data.mediaUrl,
+              mediaType: data.mediaType || 'image',
+              metadataLines: data.metadataLines || []
+            }
+          });
+          persistHistory();
+          renderHistory();
+          updateSession(data);
+          setStatus('Файл готов');
+          return;
+        }
         state.history = [];
         const payloadHistory = Array.isArray(data.history) ? data.history : [];
         payloadHistory.forEach(item => {
@@ -3712,13 +3910,14 @@ def web_ui_html() -> str:
 </html>"""
     return html_template.replace("__CONFIG_JSON__", config_json)
 
-def validate_env() -> tuple[str, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
+def validate_env() -> tuple[str, str | None, str | None, str | None, str | None, str | None, str | None, str | None, str | None]:
     tg_token = os.getenv("TELEGRAM_BOT_TOKEN", "").strip()
     or_key = os.getenv("OPENROUTER_API_KEY", "").strip() or None
     groq_key = os.getenv("GROQ_API_KEY", "").strip() or None
     hf_key = os.getenv("HF_API_KEY", "").strip() or None
     mistral_key = os.getenv("MISTRAL_API_KEY", "").strip() or None
     siliconflow_key = os.getenv("SILICONFLOW_API_KEY", "").strip() or None
+    gemini_key = os.getenv("GEMINI_API_KEY", "").strip() or None
     legnext_key = os.getenv("LEGNEXT_API_KEY", "").strip() or None
     pollinations_key = os.getenv("POLLINATIONS_API_KEY", "").strip() or None
     pollinations_enabled = bool(os.getenv("POLLINATIONS_ENABLE", "").strip())
@@ -3763,6 +3962,12 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
         except UnicodeEncodeError as e:
             raise RuntimeError("SILICONFLOW_API_KEY must be ASCII") from e
 
+    if gemini_key:
+        try:
+            gemini_key.encode("ascii")
+        except UnicodeEncodeError as e:
+            raise RuntimeError("GEMINI_API_KEY must be ASCII") from e
+
     if legnext_key:
         try:
             legnext_key.encode("ascii")
@@ -3775,9 +3980,9 @@ def validate_env() -> tuple[str, str | None, str | None, str | None, str | None,
         except UnicodeEncodeError as e:
             raise RuntimeError("POLLINATIONS_API_KEY must be ASCII") from e
 
-    return tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, legnext_key, pollinations_key
+    return tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, gemini_key, legnext_key, pollinations_key
 def main() -> None:
-    tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, legnext_key, pollinations_key = validate_env()
+    tg_token, or_key, groq_key, hf_key, mistral_key, siliconflow_key, gemini_key, legnext_key, pollinations_key = validate_env()
     token_limits_env = os.getenv("MODEL_TOKEN_LIMITS")
     request_limits_env = os.getenv("MODEL_REQUEST_LIMITS")
     providers: dict[str, BaseClient] = {}
@@ -3792,6 +3997,8 @@ def main() -> None:
         providers[PROVIDER_MISTRAL] = MistralClient(mistral_key)
     if siliconflow_key:
         providers[PROVIDER_SILICONFLOW] = SiliconFlowClient(siliconflow_key)
+    if gemini_key:
+        providers[PROVIDER_GEMINI] = GeminiClient(gemini_key)
 
     pollinations_enabled = bool(pollinations_key or os.getenv("POLLINATIONS_ENABLE", "").strip())
     pollinations_text_models = parse_csv_env_list(
@@ -3818,6 +4025,7 @@ def main() -> None:
     app.bot_data[current_models_key(PROVIDER_HF)] = []
     app.bot_data[current_models_key(PROVIDER_MISTRAL)] = []
     app.bot_data[current_models_key(PROVIDER_SILICONFLOW)] = []
+    app.bot_data[current_models_key(PROVIDER_GEMINI)] = []
     app.bot_data[current_models_key(PROVIDER_POLLINATIONS)] = []
     app.bot_data["legnext_api_key"] = legnext_key
     app.bot_data["pollinations_api_key"] = pollinations_key
