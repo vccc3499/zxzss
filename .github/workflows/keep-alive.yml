@@ -1,0 +1,18 @@
+name: Keep Render Alive
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Ping /health endpoint
+        run: |
+          curl --fail --silent --show-error \
+               -X GET \
+               -H "User-Agent: GitHub-Actions-Keepalive" \
+               https://zxzss.onrender.com/health
